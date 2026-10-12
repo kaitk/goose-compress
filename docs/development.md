@@ -1,20 +1,20 @@
 # Development
 
 The package is Goose with no C, so it builds wherever the Goose compiler does. Tests and
-benchmarks have run on macOS so far (2026-10-12); they need a POSIX shell, Python 3, and
-`gzip`, and should run unchanged on Linux.
+benchmarks have run on macOS and on Windows under Git Bash (2026-10-12); they need a
+POSIX shell, Python 3, and `gzip`, and should run unchanged on Linux.
 
 ## Toolchain
 
-| Tool | Version used (2026-10-12) | For |
-|---|---|---|
-| Goose compiler | `c38dc0f`, the pin in `README.md` | everything |
-| macOS | 26.3.1, Apple M1 Pro | |
-| C compiler | Apple clang 21.0.0 (`clang-2100.0.123.102`) | `goose build`, `bench/` |
-| CMake | 4.4.4 (Homebrew) | building the Goose compiler, libdeflate, and zlib-ng |
-| Python | 3.14.8 (Homebrew) | `scripts/roundtrip.py`, with its `zlib` module |
-| gzip | Apple gzip 475 | `scripts/roundtrip.py` |
-| git, curl, unzip, shasum | macOS | `bench/build.sh` |
+| Tool | macOS (2026-10-12) | Windows (2026-10-12) | For |
+|---|---|---|---|
+| Goose compiler | `c38dc0f`, the pin in `README.md` | `c38dc0f` | everything |
+| OS | macOS 26.3.1, Apple M1 Pro | Windows 11 Pro 10.0.26200, Ryzen 7 5800X3D | |
+| C compiler | Apple clang 21.0.0 (`clang-2100.0.123.102`) | clang 22.1.3 from Visual Studio Build Tools 2026 (18): `clang-cl` for `goose build`, `clang` for `bench/` | `goose build`, `bench/` |
+| CMake | 4.4.4 (Homebrew) | 4.3.1-msvc1 and Ninja 1.13.2, from the Build Tools | building the Goose compiler, libdeflate, and zlib-ng |
+| Python | 3.14.8 (Homebrew) | 3.14.6 (python.org) | `scripts/roundtrip.py`, with its `zlib` module |
+| gzip | Apple gzip 475 | gzip 1.13, from Git for Windows | `scripts/roundtrip.py` |
+| Shell, git, curl, unzip, shasum | macOS | Git for Windows 2.45.1 (Git Bash) | `bench/build.sh` |
 
 ## Set up the Goose compiler
 
@@ -30,9 +30,20 @@ cmake --build ../goose/build-macos -j
 export GOOSE=$PWD/../goose/build-macos/goose
 ```
 
-On Linux, name the build directory `build-linux` (goose-http's
+On Linux, name the build directory `build-linux`. On Windows, build it in PowerShell
+with the Visual Studio Build Tools' CMake, into `build/`:
+
+```powershell
+cmake -S ..\goose -B ..\goose\build -G "Visual Studio 18 2026"
+cmake --build ..\goose\build --config Release
+```
+
+The compiler is `../goose/build/Release/goose.exe`. Its `goose build` finds `clang-cl`
+in the Build Tools on its own (`goose toolchain` says which compiler it chose), which
+matters for speed: `simd fn` builds AVX2 and AVX-512 versions only under clang, and MSVC
+ignores it. Run the scripts from Git Bash. goose-http's
 [development.md](https://github.com/kaitk/goose-http/blob/main/docs/development.md)
-has the Linux and Windows setup). The compiler finds the stdlib by walking up from its
+has more on both. The compiler finds the stdlib by walking up from its
 own binary, so a build inside the checkout needs no setting.
 
 ### Move the pin
@@ -90,7 +101,8 @@ program that imports both builds with one compiler.
 GOOSE=../goose/build-macos/goose scripts/test.sh
 ```
 
-It took about 22 s on the M1 Pro (2026-10-12). A program run through TinyCC compiles at
+It took about 22 s on the M1 Pro and 51 s on the Ryzen under Git Bash, where starting
+a process costs more (2026-10-12). A program run through TinyCC compiles at
 `-O1` without a C compiler, so the unit tests start fast; `encode` is built with
 `goose build` because `roundtrip.py` runs it 2,499 times.
 
@@ -122,6 +134,18 @@ in memory to one gzip stream; reading the file isn't timed.
 GOOSE=../goose/build-macos/goose bench/build.sh
 bench/run.sh                                # level 0, 10 runs, 7 Silesia files
 LEVELS="1 6 9" RUNS=5 FILES=dickens bench/run.sh
+FORMAT=zlib bench/run.sh                    # level 0 zlib: a copy and Adler-32
+```
+
+On Windows, `bench/build.sh` builds with `clang` and Ninja. Put the Build Tools' CMake,
+Ninja, and LLVM on Git Bash's `PATH` first:
+
+```sh
+VS="/c/Program Files (x86)/Microsoft Visual Studio/18/BuildTools"
+export PATH="$VS/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin:$PATH"
+export PATH="$VS/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja:$PATH"
+export PATH="$VS/VC/Tools/Llvm/x64/bin:$PATH"
+GOOSE=../goose/build/Release/goose.exe bench/build.sh
 ```
 
 The level is passed to each library as it is. Record results in `docs/results.md` with

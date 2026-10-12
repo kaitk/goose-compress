@@ -1,7 +1,8 @@
-// Compresses a file to gzip with the package, as bench/ref.c does with
-// libdeflate and zlib-ng: one-shot, the whole file in memory, RUNS times.
+// Compresses a file with the package, as bench/ref.c does with libdeflate and
+// zlib-ng: one-shot, the whole file in memory, RUNS times, to gzip unless
+// FORMAT says zlib or raw.
 //
-//   bench LEVEL FILE RUNS
+//   bench LEVEL FILE RUNS [FORMAT]
 //
 // Prints the same line as bench/ref.c, under the name goose.
 import std;
@@ -10,10 +11,18 @@ import compress from "../";
 
 fn main() {
     let a = args();
-    guard a.len == 4 else { write_stderr("usage: bench LEVEL FILE RUNS\n"); exit(2); }
+    guard a.len == 4 || a.len == 5 else {
+        write_stderr("usage: bench LEVEL FILE RUNS [gzip|zlib|raw]\n");
+        exit(2);
+    }
     let level, lok = parse_int(a[1]);
     let runs, rok = parse_int(a[3]);
-    guard lok && rok && level >= 0 && level <= 9 && runs > 0 else {
+    var wrap = -1;
+    let name = if a.len == 5 { a[4] } else { "gzip" };
+    if name == "gzip" { wrap = compress::GZIP; }
+    else if name == "zlib" { wrap = compress::ZLIB; }
+    else if name == "raw" { wrap = compress::RAW; }
+    guard lok && rok && level >= 0 && level <= 9 && runs > 0 && wrap >= 0 else {
         write_stderr("bad arguments\n");
         exit(2);
     }
@@ -24,7 +33,7 @@ fn main() {
     for i in runs {
         out.clear();
         let t = clock_ns();
-        compress::compress(data, out, compress::GZIP, level);
+        compress::compress(data, out, wrap, level);
         let ns = clock_ns() - t;
         rates.push(data.len / (ns * 1e-9) / 1e6);
     }

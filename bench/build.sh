@@ -5,12 +5,23 @@
 # with goose build; and the Silesia corpus, checked against its SHA-256.
 #
 # GOOSE names the compiler (default: goose on PATH), CC the C compiler
-# (default: cc).
+# (default: cc, or clang on Windows). On Windows it runs under Git Bash, with
+# CMake and Ninja on PATH.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 goose=${GOOSE:-goose}
 cc=${CC:-cc}
+generator=
+exe=
+case $(uname -s) in
+MINGW* | MSYS*)
+    cc=${CC:-clang}
+    exe=.exe
+    # Visual Studio's generator ignores CMAKE_C_COMPILER.
+    generator="-G Ninja"
+    ;;
+esac
 out=$root/build/bench
 mkdir -p "$out/src" "$out/corpus"
 
@@ -31,20 +42,27 @@ fetch() { # name url tag
 fetch libdeflate https://github.com/ebiggers/libdeflate.git $LIBDEFLATE_TAG
 fetch zlib-ng https://github.com/zlib-ng/zlib-ng.git $ZLIBNG_TAG
 
-cmake -S "$out/src/libdeflate" -B "$out/libdeflate" -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_C_COMPILER="$cc" -DLIBDEFLATE_BUILD_SHARED_LIB=OFF \
-    -DLIBDEFLATE_BUILD_GZIP=OFF >/dev/null
+# shellcheck disable=SC2086
+cmake $generator -S "$out/src/libdeflate" -B "$out/libdeflate" \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER="$cc" \
+    -DLIBDEFLATE_BUILD_SHARED_LIB=OFF -DLIBDEFLATE_BUILD_GZIP=OFF >/dev/null
 cmake --build "$out/libdeflate" -j >/dev/null
-cmake -S "$out/src/zlib-ng" -B "$out/zlib-ng" -DCMAKE_BUILD_TYPE=Release \
+# shellcheck disable=SC2086
+cmake $generator -S "$out/src/zlib-ng" -B "$out/zlib-ng" -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER="$cc" -DZLIB_COMPAT=OFF -DBUILD_SHARED_LIBS=OFF \
     -DBUILD_TESTING=OFF -DWITH_GTEST=OFF >/dev/null
 cmake --build "$out/zlib-ng" -j >/dev/null
 
-"$cc" -O2 -o "$out/ref" "$root/bench/ref.c" \
+# Each platform names the static libraries its own way: libdeflate.a and
+# libz-ng.a, or deflatestatic.lib and zlibstatic-ng.lib.
+lib() {
+    find "$1" -maxdepth 1 \( -name "$2*.a" -o -name "$2*.lib" \) | head -n 1
+}
+"$cc" -O2 -o "$out/ref$exe" "$root/bench/ref.c" \
     -I"$out/src/libdeflate" -I"$out/zlib-ng" \
-    "$out/libdeflate/libdeflate.a" "$out/zlib-ng/libz-ng.a"
+    "$(lib "$out/libdeflate" "*deflate")" "$(lib "$out/zlib-ng" "*z*-ng")"
 
-"$goose" build -o "$out/bench" "$root/bench/bench.goose"
+"$goose" build -o "$out/bench$exe" "$root/bench/bench.goose"
 
 if [ ! -f "$out/corpus/dickens" ]; then
     curl -sSLf -o "$out/silesia.zip" https://sun.aei.polsl.pl/~sdeor/corpus/silesia.zip

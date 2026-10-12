@@ -1,11 +1,12 @@
-// Compresses a file to gzip with libdeflate or zlib-ng, the libraries
-// goose-compress is measured against, the way bench/bench.goose does with the
-// package: one-shot, the whole file in memory, RUNS times.
+// Compresses a file with libdeflate or zlib-ng, the libraries goose-compress is
+// measured against, the way bench/bench.goose does with the package: one-shot,
+// the whole file in memory, RUNS times, to gzip unless FORMAT says zlib or raw.
 //
-//   ref libdeflate|zlib-ng LEVEL FILE RUNS
+//   ref libdeflate|zlib-ng LEVEL FILE RUNS [FORMAT]
 //
 // Prints the library, level, input and output sizes, and the median and best
 // rate in MB/s (10^6 bytes of input per second), one line, space-separated.
+#define _CRT_SECURE_NO_WARNINGS // fopen
 #include <libdeflate.h>
 #include <zlib-ng.h>
 
@@ -13,11 +14,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 static double now(void) {
+#ifdef _WIN32
+    LARGE_INTEGER t, f;
+    QueryPerformanceCounter(&t);
+    QueryPerformanceFrequency(&f);
+    return (double)t.QuadPart / f.QuadPart;
+#else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec + ts.tv_nsec * 1e-9;
+#endif
 }
 
 static int by_value(const void *a, const void *b) {
@@ -25,13 +36,13 @@ static int by_value(const void *a, const void *b) {
     return (x > y) - (x < y);
 }
 
-// One gzip stream through zlib-ng's native API, as zlib's deflate with
-// windowBits 31 and its default memory level and strategy.
-static size_t zng_gzip(int level, const unsigned char *in, size_t n,
-                       unsigned char *out, size_t cap) {
+// One stream through zlib-ng's native API, as zlib's deflate with its default
+// memory level and strategy; window bits 31 make gzip, 15 zlib, and -15 raw.
+static size_t zng_once(int level, int bits, const unsigned char *in, size_t n,
+                           unsigned char *out, size_t cap) {
     zng_stream s;
     memset(&s, 0, sizeof s);
-    if (zng_deflateInit2(&s, level, Z_DEFLATED, 31, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+    if (zng_deflateInit2(&s, level, Z_DEFLATED, bits, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
         return 0;
     }
     s.next_in = in;
@@ -45,8 +56,8 @@ static size_t zng_gzip(int level, const unsigned char *in, size_t n,
 }
 
 int main(int argc, char **argv) {
-    if (argc != 5) {
-        fprintf(stderr, "usage: ref libdeflate|zlib-ng LEVEL FILE RUNS\n");
+    if (argc != 5 && argc != 6) {
+        fprintf(stderr, "usage: ref libdeflate|zlib-ng LEVEL FILE RUNS [gzip|zlib|raw]\n");
         return 2;
     }
     const char *lib = argv[1];
@@ -55,6 +66,15 @@ int main(int argc, char **argv) {
     int deflate = strcmp(lib, "libdeflate") == 0;
     if (!deflate && strcmp(lib, "zlib-ng") != 0) {
         fprintf(stderr, "unknown library %s\n", lib);
+        return 2;
+    }
+    const char *format = argc == 6 ? argv[5] : "gzip";
+    int bits = strcmp(format, "gzip") == 0   ? 31
+               : strcmp(format, "zlib") == 0 ? 15
+               : strcmp(format, "raw") == 0  ? -15
+                                             : 0;
+    if (bits == 0) {
+        fprintf(stderr, "unknown format %s\n", format);
         return 2;
     }
     FILE *f = fopen(argv[3], "rb");
@@ -82,8 +102,15 @@ int main(int argc, char **argv) {
     size_t size = 0;
     for (int i = 0; i < runs; i++) {
         double t = now();
-        size = deflate ? libdeflate_gzip_compress(c, in, n, out, cap)
-                       : zng_gzip(level, in, n, out, cap);
+        if (!deflate) {
+            size = zng_once(level, bits, in, n, out, cap);
+        } else if (bits == 31) {
+            size = libdeflate_gzip_compress(c, in, n, out, cap);
+        } else if (bits == 15) {
+            size = libdeflate_zlib_compress(c, in, n, out, cap);
+        } else {
+            size = libdeflate_deflate_compress(c, in, n, out, cap);
+        }
         t = now() - t;
         if (size == 0) {
             fprintf(stderr, "%s failed at level %d\n", lib, level);
