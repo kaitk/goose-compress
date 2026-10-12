@@ -339,3 +339,42 @@ build with every kept change (MB/s, best of 3 rounds' medians):
 
 The tables stay out, at -1.7 to +3.1 percent; the 8-byte extension loses on three
 files of four at both levels.
+
+### Task 003: each change, measured on its own
+
+2026-10-12, task 003, Goose `c38dc0f`, same machine, compilers, and libraries. Each
+change was built with `goose build` into a binary of its own and run against the build
+before it as `bench LEVEL FILE 3`, gzip, one-shot, in 3 alternating rounds; a cell is
+the best of the 3 rounds' medians, in MB/s. Desktop apps and another agent session ran
+beside it, at a load average of 3.9 to 7.2, and no other benchmark. Where a change kept
+the bytes, only rates are shown.
+
+Where the time goes first, by `sample` (4 s each) and, for `search`, by `xctrace`'s Time
+Profiler at the instruction level:
+
+| Share of time | Level 6 `x-ray` | Level 6 `dickens` | Level 1 `dickens` |
+|---|---:|---:|---:|
+| `search`, with `insert` inlined | 80% | 82% | |
+| `match_chains`, the lazy loop and skip-insertion | 6% | 9% | |
+| `lz_write`, level 1's matching inlined | | | 61% |
+| `end_block`: coding the symbols (`put_syms`) | 11% | 7% | 17% |
+| `end_block`: counting symbols, sizing the three forms | | | 13% |
+| Building the codes, sorting, the header | 2% | 1% | 2% |
+| CRC-32, inlined into `main` | 2% | 1% | 5% |
+
+At level 6 the `end_block` rows aren't split; level 1's split came from a copy of the C
+with `put_syms` kept out of line. Inside `search` on `x-ray`, 44 percent of its samples
+fell where the loop's exits land, against no instruction above 7 percent in libdeflate's
+`deflate_compress_lazy` on the same file.
+
+| Change | Level | dickens | mozilla | x-ray | xml | Kept |
+|---|---:|---|---|---|---|---|
+| Test the 4 bytes ending at the best length, then the 4 hashed, as libdeflate does | 6 | 43.4 → 42.1 | 61.3 → 61.6 | 49.1 → 48.0 | 112.9 → 114.8 | no |
+| 2^16 hash buckets of `u16` offsets, in the same 128 KB | 6 | 43.4 → 42.5 | 61.2 → 51.0 | 49.2 → 50.3 | 112.7 → 99.9 | no |
+| One unsigned range test ends a chain; `nice` passed in | 6 | 43.2 → 43.5 | 61.4 → 63.4 | 49.4 → 53.9 | 112.2 → 112.4 | yes |
+| The same, run again | 6 | | 61.3 → 63.3 | 49.2 → 53.8 | | |
+| The same | 9 | 21.7 → 21.8 | | 46.9 → 50.8 | 37.5 → 37.9 | |
+
+The `u16` table gave 488 to 595 bytes less output, but its offsets wrap every 64 KB, so
+stale entries pass the distance test and cost a full probe, where the `u32` table turns
+them away before any compare.

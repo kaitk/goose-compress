@@ -55,8 +55,8 @@ struct Lz {
     // candidate is compared byte by byte.
     head: u32[HASH_SIZE],
     // From level 2, the hash chains: for each stream offset modulo WSIZE, the
-    // distance back to the one before it in its bucket, or 0 for none in
-    // reach. An entry is good until the offset WSIZE later takes its slot, so
+    // distance back to the one before it in its bucket, or NO_PREV for none
+    // in reach. An entry is good until the offset WSIZE later takes its slot, so
     // a search follows it only from less than WSIZE back.
     prev: u16[WSIZE],
     // A lazy level's match found at pos while it looked ahead, or a length
@@ -147,6 +147,7 @@ fn match_fast(z: Lz&, out: u8[>..]&, end: i64) {
 // match.
 fn match_chains(z: Lz&, out: u8[>..]&, end: i64) {
     let depth = DEPTH[z.level];
+    let nice = NICE[z.level];
     let lazy = LAZY[z.level];
     while z.pos < end {
         let p = z.pos;
@@ -154,7 +155,7 @@ fn match_chains(z: Lz&, out: u8[>..]&, end: i64) {
         var dist = z.ahead_dist;
         z.ahead_len = 0;
         if len == 0 {
-            let len0, dist0 = search(z, p, MIN_MATCH, depth);
+            let len0, dist0 = search(z, p, MIN_MATCH, depth, nice);
             len = len0;
             dist = dist0;
         }
@@ -164,8 +165,8 @@ fn match_chains(z: Lz&, out: u8[>..]&, end: i64) {
         }
         // The positions after p already inserted.
         var done = 0;
-        if lazy > 0 && len < NICE[z.level] {
-            let len1, dist1 = search(z, p + 1, len, depth >> 1);
+        if lazy > 0 && len < nice {
+            let len1, dist1 = search(z, p + 1, len, depth >> 1, nice);
             done = 1;
             if better(len1, dist1, len, dist, 2) {
                 z.ahead_len = len1;
@@ -174,7 +175,7 @@ fn match_chains(z: Lz&, out: u8[>..]&, end: i64) {
                 continue;
             }
             if lazy > 1 {
-                let len2, dist2 = search(z, p + 2, len, depth >> 2);
+                let len2, dist2 = search(z, p + 2, len, depth >> 2, nice);
                 done = 2;
                 if better(len2, dist2, len, dist, 6) {
                     z.ahead_len = len2;
@@ -204,24 +205,34 @@ fn insert(z: Lz&, i: i64) -> i64 {
     let here = z.base + i as! u32;
     let d: i64 = here - z.head[h];
     z.head[h] = here;
-    z.prev[(here & (WSIZE - 1)) as i64] = (if d <= WSIZE { d } else { 0 }) as! u16;
+    z.prev[(here & (WSIZE - 1)) as i64] =
+        (if (d - 1) as! u64 < WSIZE { d } else { NO_PREV }) as! u16;
     return d;
 }
 
+// A chain entry for no earlier position in reach: farther than any search
+// goes.
+let NO_PREV = 65535;
+
 // Inserts p, then returns the longest match at p longer than `floor`, with its
 // distance, or a length of 0. It compares at most `depth` candidates, newest
-// first, and stops at a match of the level's NICE.
-fn search(z: Lz&, p: i64, floor: i64, depth: i64) -> i64, i64 {
+// first, and stops at a match of `nice`.
+fn search(z: Lz&, p: i64, floor: i64, depth: i64, nice: i64) -> i64, i64 {
     guard p + 4 <= z.fill else { return 0, 0; }
     var d = insert(z, p);
     if p + 5 <= z.fill { z.warm = z.head[hash4(load32(z.win, p + 1))]; }
     let most = min(MAX_MATCH, z.fill - p);
-    let nice = min(NICE[z.level], most);
+    let enough = min(nice, most);
     let v = load32(z.win, p);
     var best = floor;
     var best_dist = 0;
+    guard best < enough else { return 0, 0; }
+    // A distance is in reach from 1 to `reach`, one unsigned compare. A chain
+    // that ends steps out of reach: by NO_PREV, or, from WSIZE back, by the
+    // step p's own insert left in the slot it shares.
+    let reach = min(WSIZE, p) as! u64;
     var left = depth;
-    while best < nice && d >= 1 && d <= WSIZE && d <= p && left > 0 {
+    while (d - 1) as! u64 < reach && left > 0 {
         let c = p - d;
         // The byte that would make the match longer than the best, then the 4
         // hashed, turn away most candidates.
@@ -230,12 +241,10 @@ fn search(z: Lz&, p: i64, floor: i64, depth: i64) -> i64, i64 {
             if len > best {
                 best = len;
                 best_dist = d;
+                guard best < enough else { break; }
             }
         }
-        guard d < WSIZE else { break; }
-        let step = z.prev[((z.base + c as! u32) & (WSIZE - 1)) as i64];
-        guard step > 0 else { break; }
-        d += step;
+        d += z.prev[((z.base + c as! u32) & (WSIZE - 1)) as i64];
         left--;
     }
     guard best_dist > 0 else { return 0, 0; }
