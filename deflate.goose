@@ -1,5 +1,5 @@
-// The DEFLATE stream at levels 1 and up: LZ77 with one hash probe per position,
-// and each block coded with a dynamic Huffman code built from its symbols, with
+// The DEFLATE stream at levels 1 and up: LZ77 with one hash probe a position at
+// level 1 and hash chains above it, and each block coded with a dynamic Huffman code built from its symbols, with
 // the fixed code (RFC 1951 §3.2.6), or stored, whichever is shortest.
 namespace compress;
 

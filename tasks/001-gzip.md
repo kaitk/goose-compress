@@ -1,6 +1,6 @@
 # 001: gzip and zlib
 
-Status: in-progress (steps 1 to 3 done, 2026-10-12)
+Status: done (2026-10-12)
 
 A DEFLATE encoder in Goose with the gzip and zlib wrappers, for goose-http's task 022
 (its subtask 02, which points here). Each step gives output `gzip -d` accepts, so
@@ -35,10 +35,10 @@ nearest levels, taking from their designs what Goose can express (requested
 - [x] A fuzz test of random inputs and flush points against Python's `zlib`
 - [x] Step 2: LZ77 with fixed Huffman tables, passing the same tests
 - [x] Step 3: dynamic Huffman tables, passing the same tests
-- [ ] Step 4: rate and ratio per level against libdeflate and zlib-ng at their nearest
+- [x] Step 4: rate and ratio per level against libdeflate and zlib-ng at their nearest
       levels, on the same inputs and machine, with how they were measured, in
       `docs/results.md`
-- [ ] Findings from the work recorded in `docs/goose-findings.md`
+- [x] Findings from the work recorded in `docs/goose-findings.md`
 
 ## Step 1
 
@@ -78,3 +78,31 @@ and 1.3 to 20 percent larger than libdeflate's (13 to 32 percent at step 2). It
 compresses 60-146 MB/s, 2.1 to 3.9 times slower than zlib-ng and 2.3 to 3.8 times
 slower than libdeflate. At level 6 it still does a level 1's work and loses every
 ratio, with 2 to 56 percent more output than zlib-ng (`docs/results.md`).
+
+## Step 4
+
+Each change was measured against the build before it, and kept only where it paid
+(`docs/results.md`, "Step 4: each change"). Kept: CRC-32 by slice-by-16 (346 MB/s to
+2.8 GB/s), a bit writer that appends 32 bits at once and codes a block's symbols with
+8-byte stores, and comparing a candidate's 4 hashed bytes at once before extending it.
+Levels 2 to 9 now search hash chains, and 5 to 9 match lazily, with libdeflate's
+design and parameters; a stream holds 328,050 bytes, 65,566 more than at step 3, for
+the chains. Measured and not kept: table lookups for the length and distance codes,
+8-byte match compares, skipping the hashes inside matches at level 1, and a hash table
+twice the size. Zeroing a stream can't be avoided in the package: the compiler builds
+an `Encoder` through temporaries
+([findings](../docs/goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)).
+The decisions are in the [architecture doc](../docs/architecture/README.md).
+
+On 7 Silesia files, against step 3: level 1 compresses 112-351 MB/s, 1.1 to 1.7 times
+slower than zlib-ng and 1.3 to 1.7 times slower than libdeflate (2.1 to 3.9 times at
+step 3), with the same output. Level 6 gives 2 to 35 percent less output than level 1:
+smaller than zlib-ng's on five files, the same on one, and 1 percent larger on `xml`,
+and up to 4 percent larger than libdeflate's. It compresses 43-114 MB/s, 1.3 to 1.9
+times slower than zlib-ng and 1.5 to 2.1 times slower than libdeflate. Level 9 is faster
+than zlib-ng on `x-ray` and 1.4 to 3.1 times slower on the other six files
+(`docs/results.md`).
+
+Not reached: the libraries' rates. What's left is mostly the chain search's fixed cost
+a position at levels 2 to 9, and CRC-32 at level 0. The findings this step recorded are
+std's `ctz` and `popcount` as loops, and a struct literal copying its arrays whole.

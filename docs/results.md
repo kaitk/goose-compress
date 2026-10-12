@@ -155,3 +155,185 @@ symbols, gives the least output in all and holds the least memory. Larger blocks
 text by under 0.2 percent and cost mixed files more (`mozilla` 1.4 percent at 65,536),
 because a smaller block's code follows the data more closely; a dynamic header of a few
 dozen bytes is small beside a block of 16,384 symbols.
+
+## Levels 1, 6, and 9: step 4
+
+2026-10-12, task 001 step 4, package at `a4c86dd`: CRC-32 by slice-by-16, the 8-byte
+bit writer, the 4-byte candidate check, and at levels 2 to 9 hash chains, lazy from
+level 5, with libdeflate's parameters. `LEVELS="1 6 9" bench/run.sh`: gzip output,
+one-shot, the whole file in memory, 10 runs per cell, same machine, compilers, and
+libraries as above. MB/s is the median of the 10 runs. Desktop apps ran beside it, at
+a load average of 5.1 to 5.8, and no other benchmark.
+
+### Level 1
+
+| File | MB | goose ratio | zlib-ng ratio | libdeflate ratio | goose MB/s | zlib-ng MB/s | libdeflate MB/s |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 10.2 | 0.429 | 0.591 | 0.414 | 159.3 | 199.1 | 227.9 |
+| webster | 41.5 | 0.345 | 0.456 | 0.327 | 177.7 | 241.2 | 264.7 |
+| xml | 5.3 | 0.200 | 0.221 | 0.166 | 285.8 | 460.8 | 469.5 |
+| nci | 33.6 | 0.123 | 0.161 | 0.114 | 350.7 | 601.6 | 593.9 |
+| mozilla | 51.2 | 0.401 | 0.468 | 0.394 | 170.4 | 242.5 | 244.2 |
+| samba | 21.6 | 0.281 | 0.349 | 0.272 | 224.8 | 318.6 | 339.5 |
+| x-ray | 8.5 | 0.753 | 0.929 | 0.743 | 112.2 | 127.1 | 144.0 |
+
+Goose loses every rate: 1.1 to 1.7 times slower than zlib-ng and 1.3 to 1.7 times
+slower than libdeflate, against 2.1 to 3.9 times at step 3. Its rate rose 86 to 140
+percent over step 3's (83.2 to 159.3 MB/s on `dickens`, 60.4 to 112.2 on `x-ray`).
+The output is as at step 3, but for a few bytes: smaller than zlib-ng's on all seven
+files, and 1.3 to 20 percent larger than libdeflate's.
+
+### Level 6
+
+| File | MB | goose ratio | zlib-ng ratio | libdeflate ratio | goose MB/s | zlib-ng MB/s | libdeflate MB/s |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 10.2 | 0.379 | 0.382 | 0.379 | 43.3 | 75.1 | 69.7 |
+| webster | 41.5 | 0.294 | 0.294 | 0.293 | 61.1 | 91.2 | 97.0 |
+| xml | 5.3 | 0.129 | 0.128 | 0.128 | 113.0 | 177.4 | 175.3 |
+| nci | 33.6 | 0.093 | 0.094 | 0.092 | 114.2 | 217.6 | 218.0 |
+| mozilla | 51.2 | 0.378 | 0.379 | 0.367 | 61.7 | 91.8 | 107.4 |
+| samba | 21.6 | 0.252 | 0.255 | 0.247 | 78.7 | 123.9 | 129.6 |
+| x-ray | 8.5 | 0.738 | 0.741 | 0.708 | 49.3 | 66.8 | 104.3 |
+
+Level 6 is no longer level 1: it gives 2 to 35 percent less output than level 1
+(`dickens` 0.429 to 0.379, `xml` 0.200 to 0.129). Its output is smaller than
+zlib-ng's on five files, the same on `webster`, and 1 percent larger on `xml`; against
+libdeflate's it ties on `dickens` and is up to 4 percent larger, on `x-ray`. Goose
+loses every rate: 1.3 to 1.9 times slower than zlib-ng and 1.5 to 2.1 times slower
+than libdeflate. At step 3 it lost every ratio, by 2 to 56 percent against zlib-ng.
+
+### Level 9
+
+| File | MB | goose ratio | zlib-ng ratio | libdeflate ratio | goose MB/s | zlib-ng MB/s | libdeflate MB/s |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 10.2 | 0.374 | 0.379 | 0.374 | 21.8 | 30.6 | 34.7 |
+| webster | 41.5 | 0.287 | 0.292 | 0.287 | 25.7 | 45.6 | 40.2 |
+| xml | 5.3 | 0.122 | 0.124 | 0.122 | 37.7 | 84.1 | 67.8 |
+| nci | 33.6 | 0.088 | 0.089 | 0.087 | 24.0 | 73.4 | 58.1 |
+| mozilla | 51.2 | 0.376 | 0.372 | 0.365 | 15.7 | 26.5 | 27.3 |
+| samba | 21.6 | 0.249 | 0.250 | 0.244 | 25.9 | 51.0 | 43.5 |
+| x-ray | 8.5 | 0.738 | 0.703 | 0.706 | 46.5 | 41.3 | 90.7 |
+
+Goose's output is smaller than zlib-ng's on five files and larger on `mozilla` (1
+percent) and `x-ray` (5 percent); it ties libdeflate's on three text files and is up
+to 4.5 percent larger elsewhere. It beats zlib-ng's rate on `x-ray`, 46.5 MB/s against
+41.3, and loses every other rate: 1.4 to 3.1 times slower than zlib-ng and 1.6 to 2.4
+times slower than libdeflate. On `x-ray` level 9 gives the same output as level 6,
+and libdeflate's is 4.5 percent smaller. libdeflate also finds matches of length 3
+and chooses block boundaries from the data, which the package doesn't; which of them
+accounts for `x-ray` is untested.
+
+### Small inputs
+
+2026-10-12, task 001 step 4, same machine and package. A program built with `goose
+build` calls `compress::compress` (gzip) on the first N bytes of `dickens` 20,000,000 /
+(N + 2,000) times in a row, 5 times over; a cell is the best of the 5 averages, in µs
+a call.
+
+| Level | 100 bytes | 1,000 bytes | 10,000 bytes |
+|---:|---:|---:|---:|
+| 1 | 23.9 | 27.8 | 62.7 |
+| 6 | 24.5 | 31.7 | 136.1 |
+
+At step 3's 262,484-byte stream, level 1 took 20.2, 23.9, and 66.9 µs. `sample` put
+three quarters of the 100-byte call in building the `Encoder`, zeroing and copying it
+([findings](goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)).
+
+## Step 4: each change, measured on its own
+
+2026-10-12, task 001 step 4. Each change was built with `goose build` into a binary of
+its own and run against the build before it as `bench LEVEL FILE RUNS`, gzip, one-shot,
+in 3 alternating rounds on the same machine; a cell is the best of the 3 rounds'
+medians, in MB/s. `RUNS` was 5 until hash chains, 3 after. Two builds of the same code
+differed by under 1 percent. The machine ran a virtual machine and desktop apps
+throughout, at a load average of 5 to 7. Output sizes don't vary between runs; where a
+change kept the bytes, only rates are shown.
+
+| Change | Level | dickens | mozilla | x-ray | xml | Kept |
+|---|---:|---|---|---|---|---|
+| CRC-32 by slice-by-8 | 0 | 348 → 1,815 | | 346 → 1,840 | | |
+| Slice-by-16 instead | 0 | 1,802 → 2,830 | | 1,826 → 2,874 | | yes |
+| Table lookups for length and distance codes | 1 | 111.9 → 110.4 | 120.5 → 120.3 | 73.5 → 73.0 | 203.1 → 203.6 | no |
+| Append 32 bits at once | 1 | 111.6 → 125.3 | 119.5 → 133.6 | 72.9 → 82.4 | 200.5 → 224.3 | yes |
+| Code symbols with 8-byte stores | 1 | 126.7 → 134.3 | 133.5 → 141.2 | 82.3 → 85.2 | 226.4 → 242.4 | yes |
+| The code tables again, after both | 1 | 134.7 → 137.4 | 141.5 → 143.2 | 85.6 → 86.2 | 242.3 → 241.8 | no |
+| 8-byte match compare, with std's `ctz` | 1 | 134.3 → 115.0 | 142.2 → 126.3 | 86.3 → 75.4 | 242.6 → 222.1 | no |
+| Compare the 4 hashed bytes first | 1 | 135.3 → 157.8 | 141.8 → 167.0 | 85.1 → 108.2 | 243.5 → 282.0 | yes |
+| Then 8-byte extension, de Bruijn `ctz` | 1 | 157.8 → 136.3 | 165.8 → 159.9 | 107.6 → 104.9 | 286.7 → 269.3 | no |
+| Then 8-byte extension, byte shifts | 1 | 157.5 → 155.2 | 166.2 → 168.7 | 107.6 → 108.5 | 282.1 → 290.2 | no |
+| The same, after hash chains | 6 | 41.8 → 40.4 | 58.2 → 57.1 | 43.7 → 42.4 | 110.3 → 111.7 | no |
+| The same, after hash chains | 9 | 20.9 → 20.2 | 15.3 → 15.7 | 40.9 → 39.9 | 37.3 → 39.2 | no |
+| Load the next hash bucket early | 6 | 40.0 → 41.6 | 57.7 → 60.4 | 43.3 → 48.4 | 108.7 → 111.5 | yes |
+
+Slice-by-16 also took level 1 from 87 to 110 MB/s on `dickens` and from 134 to 195 on
+`xml`. Comparing the 4 hashed bytes first turns away a candidate from an empty bucket
+whose first 3 bytes happen to match the stream's start, so it gave 1 to 2 bytes less
+output on `dickens` and `mozilla`. The 8-byte compare lost with std's `ctz` because
+`ctz` is a loop ([findings](goose-findings.md#ctz-and-popcount-loop-over-the-bits)),
+and without it moved rates by -3 to +5 percent, about the noise. Matches are short (at
+level 6, the candidates extended on `dickens` match 5.7 bytes on average), and at
+levels 6 and 9 the time goes into walking the chains.
+
+### Choices that trade ratio for rate
+
+Same method. Output in bytes, rate in MB/s.
+
+Hashing the positions inside a match, at level 1:
+
+| File | Every position | None | Inside matches up to 32 bytes |
+|---|---|---|---|
+| dickens | 4,371,843 at 158.1 | 4,703,515 at 147.4 | 4,372,121 at 157.1 |
+| mozilla | 20,556,637 at 167.1 | 21,238,427 at 183.7 | 20,620,251 at 169.0 |
+| nci | 4,137,911 at 349.2 | 4,483,828 at 427.9 | 4,247,203 at 409.4 |
+| samba | 6,072,417 at 221.2 | 6,500,387 at 241.5 | 6,134,154 at 229.9 |
+| webster | 14,305,204 at 173.6 | 15,441,882 at 175.8 | 14,339,385 at 174.9 |
+| x-ray | 6,383,613 at 108.9 | 6,463,921 at 104.6 | 6,383,621 at 108.9 |
+| xml | 1,070,353 at 281.1 | 996,096 at 342.6 | 1,027,612 at 307.4 |
+
+"None" ran against a round of "every position" at 156.4, 165.7, 349.1, 220.3, 174.0,
+108.0, and 275.3. Every position is hashed: skipping them all gives 3 to 8 percent more
+output on six files, and the 32-byte cut pays only on `nci` and `xml`, which level 1
+already compresses fastest.
+
+A hash table of 2^16 entries instead of 2^15, 131,072 more bytes a stream: at level 6,
+`dickens` 41.9 → 42.0, `mozilla` 58.2 → 62.7, `x-ray` 43.8 → 52.4, and `xml` 109.9 →
+111.3 MB/s, with output under 0.01 percent smaller. At level 1, output 0.3 to 0.8
+percent smaller (`dickens` 4,371,843 → 4,342,576, `x-ray` 6,383,613 → 6,332,212) at
+the same rate. Not taken: the gain is on two files of four, for 40 percent more
+memory.
+
+Search depth and nice length at level 6, with the next bucket loaded early, against
+both libraries in the same rounds (ratio at MB/s). This ran after the per-change
+measurements, with no virtual machine running, at a load average of 4.4 to 5.8:
+
+| Depth, nice | dickens | mozilla | samba | x-ray | xml |
+|---|---|---|---|---|---|
+| 8, 16 | 0.3883 at 70.2 | 0.3825 at 89.1 | 0.2581 at 124.0 | 0.7383 at 50.3 | 0.1449 at 184.0 |
+| 16, 32 | 0.3826 at 55.5 | 0.3798 at 75.2 | 0.2535 at 99.3 | 0.7383 at 49.7 | 0.1349 at 146.7 |
+| 24, 48 | 0.3804 at 49.0 | 0.3789 at 68.3 | 0.2523 at 88.7 | 0.7383 at 50.0 | 0.1309 at 129.3 |
+| 35, 65 (libdeflate's) | 0.3790 at 43.4 | 0.3782 at 61.7 | 0.2515 at 79.3 | 0.7383 at 49.9 | 0.1288 at 112.8 |
+| zlib-ng 6 | 0.3822 at 75.5 | 0.3791 at 91.7 | 0.2546 at 123.3 | 0.7412 at 66.8 | 0.1276 at 175.4 |
+| libdeflate 6 | 0.3787 at 70.8 | 0.3671 at 107.3 | 0.2470 at 129.0 | 0.7078 at 104.6 | 0.1280 at 179.1 |
+
+In an earlier run under more load, nice 128 at depth 35 gave 0.1 to 0.5 percent less
+output than nice 65 on `samba` and `xml`, 2 to 4 percent slower. Level 6 keeps
+libdeflate's 35 and 65. No depth reaches zlib-ng's rate at its ratio: at depth 8 the
+package is 7 percent slower than zlib-ng on `dickens` and 5 percent faster on `xml`,
+with 1.6 and 13.6 percent more output. `x-ray`'s rate doesn't move with depth: its
+chains are short (1.2 candidates a search), and its time goes into the search's fixed
+cost.
+
+The two changes nearest the noise were run again in the same session, against the
+build with every kept change (MB/s, best of 3 rounds' medians):
+
+| Variant | Level | dickens | mozilla | x-ray | xml |
+|---|---:|---|---|---|---|
+| Kept build | 1 | 160.0 | 170.4 | 113.0 | 283.9 |
+| Code tables | 1 | 164.4 | 171.5 | 111.1 | 292.7 |
+| 8-byte extension, byte shifts | 1 | 154.4 | 167.7 | 108.4 | 291.4 |
+| Kept build | 6 | 43.8 | 61.5 | 49.7 | 113.6 |
+| Code tables | 6 | 44.0 | 62.1 | 49.9 | 113.8 |
+| 8-byte extension, byte shifts | 6 | 41.8 | 60.3 | 47.2 | 114.7 |
+
+The tables stay out, at -1.7 to +3.1 percent; the 8-byte extension loses on three
+files of four at both levels.

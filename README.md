@@ -5,10 +5,10 @@ DEFLATE encoders, bytes in and bytes out, with a streaming encoder that flushes.
 Goose, with no C ([architecture](docs/architecture/README.md)). Its first user is
 [goose-http](https://github.com/kaitk/goose-http), which compresses responses with it.
 
-Early work: at levels 1 and up, the encoder finds LZ77 matches with one hash probe a
-position and codes each block with a dynamic Huffman code built from it, the fixed
-code, or stored, whichever is shortest. Speed and a stronger level come next (task
-001).
+Level 1 finds LZ77 matches with one hash probe a position; levels 2 to 9 search hash
+chains, and from level 5 match lazily, after libdeflate's design. Each block is coded
+with a dynamic Huffman code built from it, the fixed code, or stored, whichever is
+shortest.
 
 ## Status
 
@@ -16,9 +16,9 @@ code, or stored, whichever is shortest. Speed and a stronger level come next (ta
 
 | | Encoding | Notes |
 |---|---|---|
-| 🟡 | gzip | LZ77 with dynamic Huffman codes. Speed and lazy matching next (task 001). |
-| 🟡 | zlib (HTTP's `deflate`) | The same DEFLATE stream as gzip, with the zlib header and Adler-32. |
-| 🟡 | Raw DEFLATE | The same stream with no wrapper. |
+| 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.1 to 2.1 times slower than zlib-ng and libdeflate at levels 1 and 6 ([results](docs/results.md)). |
+| 🟢 | zlib (HTTP's `deflate`) | The same DEFLATE stream as gzip, with the zlib header and Adler-32. |
+| 🟢 | Raw DEFLATE | The same stream with no wrapper. |
 | 🔴 | zstd | Later, in this package, once gzip is measured. |
 | 🔴 | Brotli | Out of scope: HTTP servers serve it precompressed (task 002). |
 | 🔴 | Decoding | Out of scope for now. |
@@ -28,7 +28,7 @@ code, or stored, whichever is shortest. Speed and a stronger level come next (ta
 | 🟢 | One-shot `compress` |
 | 🟢 | Streaming `write`, `flush` (as zlib's `Z_SYNC_FLUSH`), and `finish` |
 | 🟢 | CRC-32 and Adler-32, continuing across calls |
-| 🟡 | Compression levels: 0 stores, and 1 to 9 all match greedily for now |
+| 🟢 | Compression levels: 0 stores, 1 probes once, 2 to 4 search chains greedily, 5 to 9 lazily |
 
 ## Quick start
 
@@ -62,16 +62,19 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
 
 - **Formats**: `compress::GZIP` (RFC 1952), `compress::ZLIB` (RFC 1950, HTTP's
   `deflate`), and `compress::RAW` (RFC 1951 alone).
-- **Levels**: 0 stores; 1 to 9 compress, and `compress::DEFAULT_LEVEL` is 6, as zlib's.
-  Every level from 1 compresses the same way until task 001's step 4 adds a stronger
-  one. Each block is coded with a dynamic Huffman code, the fixed code, or stored,
-  whichever is shortest, so incompressible input grows by about 5 bytes every 16 KB.
+- **Levels**: 0 stores; 1 to 9 compress, each smaller and slower than the one before,
+  and `compress::DEFAULT_LEVEL` is 6, as zlib's. Each block is coded with a dynamic
+  Huffman code, the fixed code, or stored, whichever is shortest, so incompressible
+  input grows by about 5 bytes every 16 KB.
 - **`compress::compress(data, out, format = GZIP, level = DEFAULT_LEVEL)`**: compresses
   `data` whole into one stream.
 - **`compress::encoder(format = GZIP, level = DEFAULT_LEVEL)`**: a stream,
-  `compress::Encoder`. It's a fixed-size value of 262,484 bytes, so it fits in an
-  array of per-connection slots: a 64 KB window, a 128 KB hash table, and a 64 KB
-  block of symbols ([architecture](docs/architecture/README.md)).
+  `compress::Encoder`. It's a fixed-size value of 328,050 bytes, so it fits in an
+  array of per-connection slots: a 64 KB window, a 128 KB hash table, 64 KB of hash
+  chains, and a 64 KB block of symbols ([architecture](docs/architecture/README.md)).
+  Building one is most of the 24 µs `compress` takes for 100 bytes on an M1 Pro, at the
+  pinned compiler
+  ([findings](docs/goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)).
   - `compress::write(e, data, out)`: compresses `data` into the stream. It appends whole
     blocks and holds the rest, so `out` may grow by nothing.
   - `compress::flush(e, out)`: appends everything written so far, then an empty stored
@@ -88,13 +91,19 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
 ## Benchmarks
 
 Against libdeflate and zlib-ng, built in release mode: [docs/results.md](docs/results.md).
-At level 0, where all three store, the package compresses about 345 MB/s on an M1 Pro,
-against zlib-ng's 7.0-7.4 GB/s and libdeflate's 21-32 GB/s. The gap is CRC-32, which
-both libraries compute with a carryless multiply that Goose can't express
-([findings](docs/goose-findings.md#goose-has-no-carryless-multiply)). At level 1, with
-dynamic Huffman codes, it compresses 60-146 MB/s on Silesia files, 2.1 to 3.9 times
-slower than zlib-ng and libdeflate. Its output is smaller than zlib-ng's on all seven
-files and 1.3 to 20 percent larger than libdeflate's.
+On an M1 Pro, with seven Silesia files:
+
+- Level 0 stores at 2.8 GB/s (on `dickens` and `x-ray`), against zlib-ng's 7 GB/s and
+  libdeflate's 21-32 GB/s.
+  The gap is CRC-32, which both libraries compute with a carryless multiply that Goose
+  can't express ([findings](docs/goose-findings.md#goose-has-no-carryless-multiply)).
+- Level 1 compresses 112-351 MB/s, 1.1 to 1.7 times slower than zlib-ng and 1.3 to
+  1.7 times slower than libdeflate. Its output is smaller than zlib-ng's on all seven
+  files and 1.3 to 20 percent larger than libdeflate's.
+- Level 6 compresses 43-114 MB/s, 1.3 to 1.9 times slower than zlib-ng and 1.5 to
+  2.1 times slower than libdeflate. Its output is smaller than zlib-ng's on five files,
+  the same on one, and 1 percent larger on `xml`; it's 0 to 4 percent larger than
+  libdeflate's.
 
 ## Credits
 
@@ -108,7 +117,13 @@ from Moffat and Katajainen's in-place algorithm ("In-Place Calculation of
 Minimum-Redundancy Codes", 1995). libdeflate
 ([ebiggers/libdeflate](https://github.com/ebiggers/libdeflate)) and zlib-ng
 ([zlib-ng/zlib-ng](https://github.com/zlib-ng/zlib-ng)) are the benchmark's
-competitors; when the package takes an idea from either, this section names it.
+competitors; when the package takes an idea from either, this section names it. From
+libdeflate: hash chains searched newest first, with a candidate's 4 hashed bytes and
+the byte at the best length compared before it's extended (`hc_matchfinder`); lazy
+and lazy2 matching, with its measure of a better match; each level's search depth,
+nice length, and lazy mode; loading the next position's hash bucket early, as its
+prefetch does; and coding a block's symbols with 8-byte stores. CRC-32 by
+slice-by-16 is the common table method, not either library's.
 
 ## Layout
 

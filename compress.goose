@@ -13,8 +13,7 @@ let GZIP = 0;
 let ZLIB = 1;
 let RAW = 2;
 
-// Level 0 stores; 1 to 9 compress. Every level from 1 matches the same way for
-// now.
+// Level 0 stores; 1 to 9 compress, each searching longer than the one before.
 let DEFAULT_LEVEL = 6;
 
 // The most a stored block holds: its length is 16 bits (RFC 1951 §3.2.4).

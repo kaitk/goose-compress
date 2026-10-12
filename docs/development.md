@@ -60,14 +60,16 @@ program that imports both builds with one compiler.
    process. `test/test_compress.goose` checks the checksums against known values, the
    Huffman code builder (RFC 1951's canonical-code example, optimal lengths, and
    Fibonacci frequencies cut to 15 and 7 bits), the exact bytes of small streams at
-   level 0 and of small fixed and dynamic Huffman streams at level 1, flushes, matches
-   at distance 32,768, and that a stream's bytes don't depend on how its input was
-   split across writes, at levels 0, 1, and 6. Each exact-byte stream at level 1 was
+   level 0 and of small fixed and dynamic Huffman streams at level 1, what the levels
+   match differently (level 2 follows a hash chain past the newest entry; levels 5 and
+   up take a literal for a longer match one byte on), flushes, matches at distance
+   32,768, and that a stream's bytes don't depend on how its input was split across
+   writes, at levels 0, 1, 2, 6, and 9. Each exact-byte stream at level 1 and up was
    checked by decompressing it with Python's `zlib`.
 3. `goose build` of `test/encode.goose` into `build/encode`, a command that compresses
    a file at a level, one-shot or by a plan of writes and flushes.
 4. `scripts/roundtrip.py`: `build/encode` on each input in gzip, zlib, and raw DEFLATE,
-   at levels 0, 1, 6, and 9, one-shot and streamed. Each output must decompress to its
+   at levels 0, 1, 2, 6, and 9, one-shot and streamed. Each output must decompress to its
    input through Python's `zlib`, and gzip output through `gzip -dc` too. At each
    flush, the output so far must end in `00 00 ff ff` and decompress to exactly the
    input written so far. The inputs are empty, one byte, text, JSON, random bytes,
@@ -77,8 +79,9 @@ program that imports both builds with one compiler.
    whose optimal Huffman code needs 17 bits. The plans write in 257-byte pieces, which
    end inside matches, and flush every 1,000 and every 32,769 bytes, so matches run
    across writes and flushes. One-shot at level 1 and up, inputs that repeat must
-   compress below a limit set for each, a few percent above what the dynamic code
-   reaches. The script then reads back the header of the 17-bit input's block: its
+   compress below a limit set for each, a few percent above what level 1 reaches; text,
+   JSON, and the copies within 40 KB have a tighter limit from level 6, a few percent
+   above what level 6 reaches. The script then reads back the header of the 17-bit input's block: its
    literal/length code must reach exactly 15 bits and be complete. A fuzz run of 200
    random inputs, levels, and plans follows, with seed 0; `--levels`, `--fuzz N`, and
    `--seed S` change them.
@@ -87,9 +90,9 @@ program that imports both builds with one compiler.
 GOOSE=../goose/build-macos/goose scripts/test.sh
 ```
 
-It took about 19 s on the M1 Pro (2026-10-12). A program run through TinyCC compiles at
+It took about 22 s on the M1 Pro (2026-10-12). A program run through TinyCC compiles at
 `-O1` without a C compiler, so the unit tests start fast; `encode` is built with
-`goose build` because `roundtrip.py` runs it 2,039 times.
+`goose build` because `roundtrip.py` runs it 2,499 times.
 
 To try one stream by hand:
 
@@ -124,6 +127,24 @@ LEVELS="1 6 9" RUNS=5 FILES=dickens bench/run.sh
 The level is passed to each library as it is. Record results in `docs/results.md` with
 what `AGENTS.md` asks for.
 
+To compare a change, build `bench/bench.goose` before and after it into two binaries
+with `goose build -o`, and run them in alternating rounds on the same files: the
+libraries' rates varied about 4 percent between sessions, and two builds of the same
+code about 1 percent within one.
+
+### Profile
+
+`goose build` binaries keep their symbols, so macOS's `sample` profiles them while
+they run; each Goose function is a C function named `NAMESPACE_NAME_gN`, where
+inlined callees are counted in their caller:
+
+```sh
+build/bench/bench 6 build/bench/corpus/mozilla 20 & sleep 1; sample bench 4 -file prof.txt
+```
+
+`goose check --bce-lines FILE` prints the bounds checks each line kept, and the C
+`goose build` writes is in `~/.goose/build/prog/NAME-HASH/NAME.c`.
+
 ## Traps
 
 - `return` inside a block passed to a function, such as `each_split(s, ',') { ... }`,
@@ -141,3 +162,14 @@ what `AGENTS.md` asks for.
   `et_EE`, awk prints `10,2` and the table's numbers break.
 - A rebuilt zlib-ng keeps options from its CMake cache: delete `build/bench/zlib-ng`
   after changing its options in `bench/build.sh`.
+- A constant plus a `u8` is a `u8`: `t[768 + b[4]]` fails with "constant 768 does not
+  fit u8". Write `768 + b[4] as i64`.
+- `x as i64..end` parses as the variable-mode type `i64..`: write `(x as i64)..end`.
+- Several results go only into new names: `let a, b = f();`, not `a, b = f();` into
+  existing variables.
+- Shrinking a `u8[>..]&` parameter, even after growing it in the same call, makes the
+  function one that shrinks it, and a caller holding a slice of that array can no
+  longer call it (spec §5.1). The package's functions only append to `out`.
+- std's `ctz` and `popcount` are loops; `clz` compiles to an instruction
+  ([findings](goose-findings.md#ctz-and-popcount-loop-over-the-bits)).
+- Under zsh, `set -- $v` doesn't split `$v` into words; run such loops with `sh`.

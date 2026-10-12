@@ -85,8 +85,9 @@ help: `default<S>()` adds a copy, and the limited array is still copied whole.
     }
 
 On an M1 Pro this takes 1.2 s, 12 µs a `make`; with `win: u8[..65536]` and a `push`,
-1.7 s. A `compress::Encoder` holds 262,484 bytes, and building one is about three
-quarters of the 20 µs `compress` takes for 100 bytes at level 1 (the rest is coding
+1.7 s. A `compress::Encoder` held 262,484 bytes before task 001 step 4's hash chains
+(328,050 after), and building one was about three
+quarters of the 20 µs `compress` took for 100 bytes at level 1 (the rest is coding
 the block), by `sample` (task 001 step 4).
 
 Workaround: none in the package; every stream pays it once. A caller that keeps an
