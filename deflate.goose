@@ -63,6 +63,7 @@ struct Lz {
     // of 0.
     ahead_len: i64,
     ahead_dist: i64,
+    warm: u32,
     // The block's symbols: a literal byte as itself, a match as its distance
     // above bit 8 and its length minus 3 below.
     nsym: i64,
@@ -213,6 +214,7 @@ fn insert(z: Lz&, i: i64) -> i64 {
 fn search(z: Lz&, p: i64, floor: i64, depth: i64) -> i64, i64 {
     guard p + 4 <= z.fill else { return 0, 0; }
     var d = insert(z, p);
+    if p + 5 <= z.fill { z.warm = z.head[hash4(load32(z.win, p + 1))]; }
     let most = min(MAX_MATCH, z.fill - p);
     let nice = min(NICE[z.level], most);
     let v = load32(z.win, p);
