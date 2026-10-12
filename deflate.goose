@@ -210,20 +210,68 @@ fn code_bits(freq: const u32[:], h: Huff&) -> i64 {
     return n;
 }
 
+// Codes the symbols and the end of the block. A symbol takes at most 48 bits,
+// so with the fewer than 8 bits left over from the one before, it fits a u64:
+// each is stored as 8 bytes into a buffer, and the whole bytes kept. The
+// buffer is appended to out as it fills, since shrinking out would bar
+// callers from holding slices of it.
 fn put_syms(z: Lz&, out: u8[>..]&, syms: const u32[:], lit: Huff&, dist: Huff&) {
+    var buf: u8[STAGE + 8] = [0; STAGE + 8];
+    var o = 0;
+    var bits = z.bits;
+    var nbits = z.nbits;
+    while nbits >= 8 {
+        buf[o] = bits as! u8;
+        o++;
+        bits >>= 8;
+        nbits -= 8;
+    }
     for s in syms {
         if s < 256 {
-            put_bits(z, out, lit.code[s], lit.len[s]);
+            bits |= (lit.code[s] as u64) << nbits;
+            nbits += lit.len[s];
         } else {
             let lc, lbits, lextra = len_code(s & 0xff);
-            put_bits(z, out, lit.code[lc], lit.len[lc]);
-            put_bits(z, out, lextra, lbits);
+            bits |= (lit.code[lc] as u64) << nbits;
+            nbits += lit.len[lc];
+            bits |= (lextra as u64) << nbits;
+            nbits += lbits;
             let dc, dbits, dextra = dist_code(s >> 8);
-            put_bits(z, out, dist.code[dc], dist.len[dc]);
-            put_bits(z, out, dextra, dbits);
+            bits |= (dist.code[dc] as u64) << nbits;
+            nbits += dist.len[dc];
+            bits |= (dextra as u64) << nbits;
+            nbits += dbits;
+        }
+        put_le64(buf[o..o + 8], bits);
+        o += nbits >> 3;
+        bits >>= nbits & ~7;
+        nbits &= 7;
+        if o >= STAGE {
+            out.append(buf[..o]);
+            o = 0;
         }
     }
-    put_bits(z, out, lit.code[END_BLOCK], lit.len[END_BLOCK]);
+    bits |= (lit.code[END_BLOCK] as u64) << nbits;
+    nbits += lit.len[END_BLOCK];
+    put_le64(buf[o..o + 8], bits);
+    o += nbits >> 3;
+    out.append(buf[..o]);
+    z.bits = bits >> (nbits & ~7);
+    z.nbits = nbits & 7;
+}
+
+// put_syms's buffer: it appends once it holds this many bytes.
+let STAGE = 4096;
+
+fn put_le64(b: u8[:], v: u64) {
+    b[0] = v as! u8;
+    b[1] = (v >> 8) as! u8;
+    b[2] = (v >> 16) as! u8;
+    b[3] = (v >> 24) as! u8;
+    b[4] = (v >> 32) as! u8;
+    b[5] = (v >> 40) as! u8;
+    b[6] = (v >> 48) as! u8;
+    b[7] = (v >> 56) as! u8;
 }
 
 // The header of a dynamic block (RFC 1951 §3.2.7): how many literal/length and
@@ -358,19 +406,26 @@ fn fixed_dist() -> Huff {
     return h;
 }
 
+// Holds fewer than 32 bits between calls, and appends them 32 at a time; n is
+// at most 32.
 fn put_bits(z: Lz&, out: u8[>..]&, v: u32, n: i64) {
     z.bits |= (v as u64) << z.nbits;
     z.nbits += n;
-    while z.nbits >= 8 {
+    if z.nbits >= 32 {
+        let b = z.bits;
+        out.append([b as! u8, (b >> 8) as! u8, (b >> 16) as! u8, (b >> 24) as! u8]);
+        z.bits >>= 32;
+        z.nbits -= 32;
+    }
+}
+
+// Appends the bits held, padded to the byte with zeros.
+fn align(z: Lz&, out: u8[>..]&) {
+    while z.nbits > 0 {
         out.push(z.bits as! u8);
         z.bits >>= 8;
         z.nbits -= 8;
     }
-}
-
-// Pads the bits to the byte with zeros.
-fn align(z: Lz&, out: u8[>..]&) {
-    if z.nbits > 0 { out.push(z.bits as! u8); }
     z.bits = 0;
     z.nbits = 0;
 }
