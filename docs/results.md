@@ -437,6 +437,19 @@ against `ededfce`:
 
 The counts add 1,272 bytes to a stream, 460,394 in all.
 
+Then, against `d71eb59`, at a load average of 5.2 to 7.1:
+
+| Change | Level | dickens | mozilla | x-ray | xml | Kept |
+|---|---:|---|---|---|---|---|
+| `search` returns length and distance packed in one value | 6 | 45.5 → 45.7 | 69.4 → 70.0 | 69.3 → 69.8 | 115.9 → 115.2 | no |
+| Carry the next position's hash to the next search | 6 | 44.7 → 45.7 | 69.5 → 71.6 | 69.6 → 74.0 | 114.9 → 116.3 | yes |
+| The same, run again | 6 | | 69.2 → 71.4 | 69.5 → 73.9 | | |
+| The same | 9 | 22.5 → 22.7 | | 65.3 → 69.2 | 37.5 → 38.1 | |
+| The same | 2 | 101.1 → 103.4 | | 75.7 → 80.1 | | |
+
+The packed result moved rates by -0.6 to +0.9 percent: the second result was cheap.
+The carried hash adds 12 bytes to a stream, 460,406 in all.
+
 ## AMD Ryzen 7 5800X3D, Windows
 
 - Desktop on an MSI `MS-7A34` board, AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,

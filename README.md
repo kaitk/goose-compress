@@ -69,9 +69,9 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
 - **`compress::compress(data, out, format = GZIP, level = DEFAULT_LEVEL)`**: compresses
   `data` whole into one stream. It reuses one encoder for each program instance (each
   thread program has its own), built at the first call, so the program holds its
-  460,394 bytes from then on.
+  460,406 bytes from then on.
 - **`compress::encoder(format = GZIP, level = DEFAULT_LEVEL)`**: a stream,
-  `compress::Encoder`. It's a fixed-size value of 460,394 bytes, so it fits in an
+  `compress::Encoder`. It's a fixed-size value of 460,406 bytes, so it fits in an
   array of per-connection slots: a 64 KB window, a 256 KB hash table, 64 KB of hash
   chains, and a 64 KB block of symbols ([architecture](docs/architecture/README.md)).
   Building one copies its arrays several times at the pinned compiler, about 145 µs on
@@ -137,7 +137,8 @@ libdeflate: hash chains searched newest first, with a candidate's 4 hashed bytes
 the byte at the best length compared before it's extended (`hc_matchfinder`); lazy
 and lazy2 matching, with its measure of a better match; each level's search depth,
 nice length, and lazy mode; loading the next position's hash bucket early, as its
-prefetch does; and coding a block's symbols with 8-byte stores. CRC-32 by
+prefetch does, and carrying that position's hash to the next search, as its
+`next_hashes` do; and coding a block's symbols with 8-byte stores. CRC-32 by
 slice-by-16 is the common table method, not either library's.
 
 ## Layout

@@ -64,6 +64,10 @@ struct Lz {
     ahead_len: i64,
     ahead_dist: i64,
     warm: u32,
+    // The hash a search computed for the position after its own, and that
+    // position's stream offset, or 0 for none: the next search takes it.
+    next_h: i64,
+    next_off: u32,
     // The block's symbols: a literal byte as itself, a match as its distance
     // above bit 8 and its length minus 3 below.
     nsym: i64,
@@ -90,6 +94,8 @@ fn lz_reset(z: Lz&, level: i64) {
     z.ahead_len = 0;
     z.ahead_dist = 0;
     z.warm = 0;
+    z.next_h = 0;
+    z.next_off = 0;
     z.nsym = 0;
     for &x in z.syms { x = 0; }
     for &x in z.lfreq { x = 0; }
@@ -242,8 +248,11 @@ fn log2_tab() -> i64[256] {
 // Inserts position i into its hash chain, and returns the distance to the
 // bucket's entry before it.
 fn insert(z: Lz&, i: i64) -> i64 {
-    let h = hash4(load32(z.win, i));
-    let here = z.base + i as! u32;
+    return insert_hashed(z, i, z.base + i as! u32, hash4(load32(z.win, i)));
+}
+
+// insert, for position i at stream offset here, whose hash is h.
+fn insert_hashed(z: Lz&, i: i64, here: u32, h: i64) -> i64 {
     let d: i64 = here - z.head[h];
     z.head[h] = here;
     z.prev[(here & (WSIZE - 1)) as i64] =
@@ -260,8 +269,15 @@ let NO_PREV = 65535;
 // first, and stops at a match of `nice`.
 fn search(z: Lz&, p: i64, floor: i64, depth: i64, nice: i64) -> i64, i64 {
     guard p + 4 <= z.fill else { return 0, 0; }
-    var d = insert(z, p);
-    if p + 5 <= z.fill { z.warm = z.head[hash4(load32(z.win, p + 1))]; }
+    let here = z.base + p as! u32;
+    let h = if here == z.next_off { z.next_h } else { hash4(load32(z.win, p)) };
+    var d = insert_hashed(z, p, here, h);
+    if p + 5 <= z.fill {
+        let h1 = hash4(load32(z.win, p + 1));
+        z.warm = z.head[h1];
+        z.next_h = h1;
+        z.next_off = here + 1;
+    }
     let most = min(MAX_MATCH, z.fill - p);
     let enough = min(nice, most);
     let v = load32(z.win, p);
