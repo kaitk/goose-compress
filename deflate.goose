@@ -56,8 +56,8 @@ struct Lz {
     head: u32[HASH_SIZE],
     // From level 2, the hash chains: for each stream offset modulo WSIZE, the
     // distance back to the one before it in its bucket, or NO_PREV for none
-    // in reach. An entry is good until the offset WSIZE later takes its slot, so
-    // a search follows it only from less than WSIZE back.
+    // in reach. An entry is good until the offset WSIZE later takes its slot;
+    // a step taken from WSIZE back reads the new entry and leaves reach.
     prev: u16[WSIZE],
     // A lazy level's match found at pos while it looked ahead, or a length
     // of 0.
