@@ -36,5 +36,8 @@ a carryless multiply, or a CRC-32 in the stdlib that uses one where the CPU has 
         return ~c;
     }
 
-Workaround: none yet. Slice-by-8, eight table lookups for eight bytes, is planned for
-task 001's step 4; it reaches a few GB/s in C, not the libraries' rate.
+Workaround: slice-by-16, 16 table lookups for 16 bytes from a 16 KB table (task 001
+step 4). On the same M1 Pro, level 0 on `dickens` and `x-ray` went from 346 MB/s to
+2.8-2.9 GB/s, and slice-by-8 reached 1.8 GB/s (`build/bench/bench 0 FILE 5`, median
+of 5 runs, best of 3 rounds, 2026-10-12). That is still 2.5 times slower than
+zlib-ng's 7 GB/s and 7 times slower than libdeflate's 21 GB/s.

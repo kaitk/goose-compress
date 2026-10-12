@@ -30,6 +30,14 @@ fn test_checksums() {
     var ff: u8[>..] = [];
     ff.push_n(255, 100000);
     assert(compress::adler32(1, ff) == 0x149A302C);
+    // 16 bytes at a time, and the bytes left over, as zlib.crc32 gives it.
+    assert(compress::crc32(0, ff) == 0x68C6CEC4);
+    var bytes: u8[>..] = [];
+    for i in 10240 { bytes.push(i as! u8); }
+    assert(compress::crc32(0, bytes) == 0xBBCE3B9D);
+    for cut in [1, 15, 16, 17, 5000] {
+        assert(compress::crc32(compress::crc32(0, bytes[..cut]), bytes[cut..]) == 0xBBCE3B9D);
+    }
 }
 
 fn test_empty() {

@@ -4,10 +4,12 @@ namespace compress;
 
 import std;
 
+// Slice-by-16: table k, at 256 k, gives the CRC of a byte followed by k zero
+// bytes, so 16 bytes take 16 independent lookups.
 let CRC_TABLE = crc_table();
 
-fn crc_table() -> u32[256] {
-    var t: u32[256] = [0; 256];
+fn crc_table() -> u32[4096] {
+    var t: u32[4096] = [0; 4096];
     for n in 256 {
         var c = n as! u32;
         for k in 8 {
@@ -15,12 +17,26 @@ fn crc_table() -> u32[256] {
         }
         t[n] = c;
     }
+    for i in 256..4096 { t[i] = (t[i - 256] >> 8) ^ t[t[i - 256] & 0xFF]; }
     return t;
 }
 
 fn crc32(crc: u32, data: const u8[:]) -> u32 {
+    let t .= CRC_TABLE;
     var c = ~crc;
-    for b in data { c = CRC_TABLE[(c ^ b) & 0xFF] ^ (c >> 8); }
+    var i = 0;
+    while i + 16 <= data.len {
+        let b = data[i..i + 16];
+        let lo = c ^ (b[0] | (b[1] as u32) << 8 | (b[2] as u32) << 16 | (b[3] as u32) << 24);
+        c = t[3840 + (lo & 0xFF) as i64] ^ t[3584 + ((lo >> 8) & 0xFF) as i64] ^
+            t[3328 + ((lo >> 16) & 0xFF) as i64] ^ t[3072 + (lo >> 24) as i64] ^
+            t[2816 + b[4] as i64] ^ t[2560 + b[5] as i64] ^ t[2304 + b[6] as i64] ^
+            t[2048 + b[7] as i64] ^ t[1792 + b[8] as i64] ^ t[1536 + b[9] as i64] ^
+            t[1280 + b[10] as i64] ^ t[1024 + b[11] as i64] ^
+            t[768 + b[12] as i64] ^ t[512 + b[13] as i64] ^ t[256 + b[14] as i64] ^ t[b[15]];
+        i += 16;
+    }
+    for b in data[i..] { c = t[(c ^ b) & 0xFF] ^ (c >> 8); }
     return ~c;
 }
 
