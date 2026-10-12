@@ -42,6 +42,56 @@ step 4). On the same M1 Pro, level 0 on `dickens` and `x-ray` went from 346 MB/s
 of 5 runs, best of 3 rounds, 2026-10-12). That is still 2.5 times slower than
 zlib-ng's 7 GB/s and 7 times slower than libdeflate's 21 GB/s.
 
+## A struct literal copies each nested fixed array whole
+
+Found on `5c83a5a`, task 001. Status: open
+
+A literal of a fixed-size struct is built through temporaries: each array field is
+zeroed in a temporary of its own and copied into a temporary of the struct holding
+it, which is copied into its parent's temporary, and so on to the variable. A struct
+of 196 KB nested one level deep is zeroed once and copied three times, with each
+element zeroed in a loop of its own in the C. Expected: the literal built in its
+destination, as §4.3 guarantees for values that aren't fixed-size, so `S { .. }`
+costs one `memset`. `default<S>()` and a limited array field (`u8[..65536]`) don't
+help: `default<S>()` adds a copy, and the limited array is still copied whole.
+
+    import std;
+    import os;
+
+    struct Inner {
+        n: i64,
+        head: u32[32768],
+        win: u8[65536],
+    }
+
+    struct Outer {
+        level: i64,
+        z: Inner,
+    }
+
+    fn make(level: i64) -> Outer {
+        return Outer { level: level, .. };
+    }
+
+    fn main() {
+        var total = 0;
+        for i in 100000 {
+            var o = make(args().len);
+            o.z.win[i & 65535] = 1;
+            o.z.head[i & 32767] = 1;
+            total += o.z.win[3] + o.z.head[5];
+        }
+        print(total);
+    }
+
+On an M1 Pro this takes 1.2 s, 12 µs a `make`; with `win: u8[..65536]` and a `push`,
+1.7 s. A `compress::Encoder` holds 262,484 bytes, and building one is about three
+quarters of the 20 µs `compress` takes for 100 bytes at level 1 (the rest is coding
+the block), by `sample` (task 001 step 4).
+
+Workaround: none in the package; every stream pays it once. A caller that keeps an
+encoder per connection builds it once per stream, not per write.
+
 ## `ctz` and `popcount` loop over the bits
 
 Found on `5c83a5a`, task 001. Status: open

@@ -39,7 +39,8 @@ fn encoder(format: i64 = GZIP, level: i64 = DEFAULT_LEVEL) -> Encoder {
     assert(format == GZIP || format == ZLIB || format == RAW);
     assert(level >= 0 && level <= 9);
     return Encoder { format: format, level: level,
-                     check: if format == ZLIB { 1 } else { 0 }, .. };
+                     check: if format == ZLIB { 1 } else { 0 }, z: Lz { level: level, .. },
+                     .. };
 }
 
 // Compresses `data` whole and appends the stream to `out`.

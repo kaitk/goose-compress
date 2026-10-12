@@ -12,8 +12,9 @@ let MIN_MATCH = 3;
 let MAX_MATCH = 258;
 // A position is matched only once this many bytes follow it, or at a flush, so
 // a match and the hashes inserted inside it never depend on how much input a
-// write happened to bring: MAX_MATCH, and 4 bytes hashed at its last position.
-let LOOKAHEAD = MAX_MATCH + 4;
+// write happened to bring: the 2 positions a lazy level looks ahead, MAX_MATCH,
+// and 4 bytes hashed at a match's last position.
+let LOOKAHEAD = 2 + MAX_MATCH + 4;
 // 32 KB of history, 32 KB of input, and the lookahead. When the window fills,
 // it slides down by WSIZE, which keeps a full WSIZE behind the next position.
 let WIN_SIZE = 2 * WSIZE + LOOKAHEAD;
@@ -28,8 +29,17 @@ let LIT_CODES = 286;
 let DIST_CODES = 30;
 let END_BLOCK = 256;
 
+// How each level from 1 matches, after libdeflate's levels: how many
+// candidates a search compares at most, the length that ends a search, and how
+// many positions after a match it looks for a better one (0 greedy, 1 lazy, 2
+// lazy2). Level 1 probes one candidate and keeps no chains.
+let DEPTH = [0, 1, 6, 12, 16, 16, 35, 100, 300, 600];
+let NICE = [0, MAX_MATCH, 10, 14, 30, 30, 65, 130, MAX_MATCH, MAX_MATCH];
+let LAZY = [0, 0, 0, 0, 0, 1, 1, 1, 2, 2];
+
 // The state of a stream at levels 1 and up, inside Encoder.
 struct Lz {
+    level: i64,
     // Bits not yet appended to the output, the oldest in the low bits.
     bits: u64,
     nbits: i64,
@@ -44,6 +54,15 @@ struct Lz {
     // match may start: it may be stale, or from 2^32 bytes back, so every
     // candidate is compared byte by byte.
     head: u32[HASH_SIZE],
+    // From level 2, the hash chains: for each stream offset modulo WSIZE, the
+    // distance back to the one before it in its bucket, or 0 for none in
+    // reach. An entry is good until the offset WSIZE later takes its slot, so
+    // a search follows it only from less than WSIZE back.
+    prev: u16[WSIZE],
+    // A lazy level's match found at pos while it looked ahead, or a length
+    // of 0.
+    ahead_len: i64,
+    ahead_dist: i64,
     // The block's symbols: a literal byte as itself, a match as its distance
     // above bit 8 and its length minus 3 below.
     nsym: i64,
@@ -84,6 +103,15 @@ fn lz_finish(z: Lz&, out: u8[>..]&) {
 // its end at a flush.
 fn lz_match(z: Lz&, out: u8[>..]&, flushing: bool) {
     let end = if flushing { z.fill } else { z.fill - LOOKAHEAD + 1 };
+    if z.level == 1 {
+        match_fast(z, out, end);
+    } else {
+        match_chains(z, out, end);
+    }
+}
+
+// Level 1: one probe a position, the longest match taken whole.
+fn match_fast(z: Lz&, out: u8[>..]&, end: i64) {
     while z.pos < end {
         let p = z.pos;
         var len = 0;
@@ -110,6 +138,106 @@ fn lz_match(z: Lz&, out: u8[>..]&, flushing: bool) {
             add_sym(z, out, z.win[p], 1);
         }
     }
+}
+
+// Levels 2 to 9: searches along the hash chains, and at a lazy level takes a
+// literal where the match one or two positions on is better. Every position
+// is inserted into the chains once, as it is searched or skipped inside a
+// match.
+fn match_chains(z: Lz&, out: u8[>..]&, end: i64) {
+    let depth = DEPTH[z.level];
+    let lazy = LAZY[z.level];
+    while z.pos < end {
+        let p = z.pos;
+        var len = z.ahead_len;
+        var dist = z.ahead_dist;
+        z.ahead_len = 0;
+        if len == 0 {
+            let len0, dist0 = search(z, p, MIN_MATCH, depth);
+            len = len0;
+            dist = dist0;
+        }
+        if len < 4 {
+            add_sym(z, out, z.win[p], 1);
+            continue;
+        }
+        // The positions after p already inserted.
+        var done = 0;
+        if lazy > 0 && len < NICE[z.level] {
+            let len1, dist1 = search(z, p + 1, len, depth >> 1);
+            done = 1;
+            if better(len1, dist1, len, dist, 2) {
+                z.ahead_len = len1;
+                z.ahead_dist = dist1;
+                add_sym(z, out, z.win[p], 1);
+                continue;
+            }
+            if lazy > 1 {
+                let len2, dist2 = search(z, p + 2, len, depth >> 2);
+                done = 2;
+                if better(len2, dist2, len, dist, 6) {
+                    z.ahead_len = len2;
+                    z.ahead_dist = dist2;
+                    add_sym(z, out, z.win[p], 1);
+                    add_sym(z, out, z.win[p + 1], 1);
+                    continue;
+                }
+            }
+        }
+        add_sym(z, out, ((dist as! u32) << 8) | (len - MIN_MATCH) as! u32, len);
+        for i in p + 1 + done..min(p + len, z.fill - 3) { insert(z, i); }
+    }
+}
+
+// Whether a match of len at dist beats one of cur at cur_dist enough to spend
+// literals on it: by libdeflate's measure, 4 for each byte longer and 1 for
+// each power of two nearer, past the threshold.
+fn better(len: i64, dist: i64, cur: i64, cur_dist: i64, threshold: i64) -> bool {
+    return len >= cur && 4 * (len - cur) + clz(dist as! u64) - clz(cur_dist as! u64) > threshold;
+}
+
+// Inserts position i into its hash chain, and returns the distance to the
+// bucket's entry before it.
+fn insert(z: Lz&, i: i64) -> i64 {
+    let h = hash4(load32(z.win, i));
+    let here = z.base + i as! u32;
+    let d: i64 = here - z.head[h];
+    z.head[h] = here;
+    z.prev[(here & (WSIZE - 1)) as i64] = (if d <= WSIZE { d } else { 0 }) as! u16;
+    return d;
+}
+
+// Inserts p, then returns the longest match at p longer than `floor`, with its
+// distance, or a length of 0. It compares at most `depth` candidates, newest
+// first, and stops at a match of the level's NICE.
+fn search(z: Lz&, p: i64, floor: i64, depth: i64) -> i64, i64 {
+    guard p + 4 <= z.fill else { return 0, 0; }
+    var d = insert(z, p);
+    let most = min(MAX_MATCH, z.fill - p);
+    let nice = min(NICE[z.level], most);
+    let v = load32(z.win, p);
+    var best = floor;
+    var best_dist = 0;
+    var left = depth;
+    while best < nice && d >= 1 && d <= WSIZE && d <= p && left > 0 {
+        let c = p - d;
+        // The byte that would make the match longer than the best, then the 4
+        // hashed, turn away most candidates.
+        if z.win[c + best] == z.win[p + best] && load32(z.win, c) == v {
+            let len = 4 + match_len(z.win, c + 4, p + 4, most - 4);
+            if len > best {
+                best = len;
+                best_dist = d;
+            }
+        }
+        guard d < WSIZE else { break; }
+        let step = z.prev[((z.base + c as! u32) & (WSIZE - 1)) as i64];
+        guard step > 0 else { break; }
+        d += step;
+        left--;
+    }
+    guard best_dist > 0 else { return 0, 0; }
+    return best, best_dist;
 }
 
 fn add_sym(z: Lz&, out: u8[>..]&, sym: u32, advance: i64) {
