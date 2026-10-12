@@ -1,10 +1,12 @@
 # Results
 
-The package against libdeflate and zlib-ng. Each section names its machine; numbers from
-different machines aren't compared. How to run them is in
-[development.md](development.md#benchmark).
+The package against libdeflate and zlib-ng. Each machine has a section of its own, which
+starts with how the machine and its tools were set up; numbers from different machines
+aren't compared. How to run them is in [development.md](development.md#benchmark).
 
-## Machine
+- [Apple M1 Pro, macOS](#apple-m1-pro-macos)
+
+## Apple M1 Pro, macOS
 
 - MacBook Pro `MacBookPro18,3`, Apple M1 Pro (8 performance and 2 efficiency cores),
   macOS 26.3.1 (Darwin 25.3.0).
@@ -14,7 +16,7 @@ different machines aren't compared. How to run them is in
   options, which pick each CPU's fastest code at run time; `bench/ref.c` at `-O2`, same
   compiler.
 
-## Level 0: stored blocks
+### Level 0: stored blocks
 
 2026-10-12, task 001 step 1, package at its first commit. `bench/run.sh` defaults: gzip
 output, one-shot, the whole file in memory, 10 runs per cell, Silesia corpus files.
@@ -41,7 +43,7 @@ At step 1 the package stored at every level. For scale, on `dickens` with 3 runs
 gave libdeflate 225 MB/s at ratio 0.414 and zlib-ng 200 MB/s at 0.591; level 6 gave
 libdeflate 70 MB/s at 0.379 and zlib-ng 75 MB/s at 0.382.
 
-## Levels 1 and 6: LZ77 with the fixed Huffman tables
+### Levels 1 and 6: LZ77 with the fixed Huffman tables
 
 2026-10-12, task 001 step 2: one hash probe a position, greedy matching, and each block
 coded with the fixed tables or stored. The package's levels 1 and 6 are the same
@@ -51,7 +53,7 @@ over hash chains. `LEVELS="1 6" bench/run.sh`: gzip output, one-shot, the
 whole file in memory, 10 runs per cell, same machine, compilers, and libraries as
 above. MB/s is the median of the 10 runs.
 
-### Level 1
+#### Level 1
 
 | File | MB | goose ratio | zlib-ng ratio | libdeflate ratio | goose MB/s | zlib-ng MB/s | libdeflate MB/s |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -70,7 +72,7 @@ smaller than the package's on all seven, by 13 to 32 percent. CRC-32, at 345 MB/
 package's time on `dickens`; the rest is matching and coding a symbol at a time,
 which step 4 takes on.
 
-### Level 6
+#### Level 6
 
 | File | MB | goose ratio | zlib-ng ratio | libdeflate ratio | goose MB/s | zlib-ng MB/s | libdeflate MB/s |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -87,7 +89,7 @@ its level 1. It beats both libraries' rate on `dickens` and `webster` and zlib-n
 on `mozilla`, only because it does a level 1's work. Dynamic tables (step 3) and lazy
 matching (step 4) are what this level is waiting on.
 
-## Levels 1 and 6: dynamic Huffman tables
+### Levels 1 and 6: dynamic Huffman tables
 
 2026-10-12, task 001 step 3: the step 2 matcher, and each block coded with a dynamic
 code built from its symbol counts, the fixed code, or stored, whichever takes the fewest
@@ -95,7 +97,7 @@ bits. The package's levels 1 and 6 are still the same encoder. `LEVELS="1 6"
 bench/run.sh`: gzip output, one-shot, the whole file in memory, 10 runs per cell, same
 machine, compilers, and libraries as above. MB/s is the median of the 10 runs.
 
-### Level 1
+#### Level 1
 
 | File | MB | goose ratio | zlib-ng ratio | libdeflate ratio | goose MB/s | zlib-ng MB/s | libdeflate MB/s |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -115,7 +117,7 @@ percent below step 2's. Counting and building the codes costs some of that; the
 libraries also ran about 4 percent slower than in the step 2 session, so part of it is
 the machine.
 
-### Level 6
+#### Level 6
 
 | File | MB | goose ratio | zlib-ng ratio | libdeflate ratio | goose MB/s | zlib-ng MB/s | libdeflate MB/s |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -132,7 +134,7 @@ percent at step 2). Its rate beats both libraries' on `dickens`, zlib-ng's on `w
 and ties zlib-ng's on `mozilla`, only because it still does a level 1's work. Lazy
 matching over hash chains (step 4) is what this level is waiting on.
 
-### Where blocks end
+#### Where blocks end
 
 2026-10-12, task 001 step 3. Two choices were measured against each other: whether a
 block ends at a slide that would drop its first bytes (so it can still be stored), and
@@ -156,7 +158,7 @@ text by under 0.2 percent and cost mixed files more (`mozilla` 1.4 percent at 65
 because a smaller block's code follows the data more closely; a dynamic header of a few
 dozen bytes is small beside a block of 16,384 symbols.
 
-## Levels 1, 6, and 9: step 4
+### Levels 1, 6, and 9: step 4
 
 2026-10-12, task 001 step 4, package at `a4c86dd`: CRC-32 by slice-by-16, the 8-byte
 bit writer, the 4-byte candidate check, and at levels 2 to 9 hash chains, lazy from
@@ -165,7 +167,7 @@ one-shot, the whole file in memory, 10 runs per cell, same machine, compilers, a
 libraries as above. MB/s is the median of the 10 runs. Desktop apps ran beside it, at
 a load average of 5.1 to 5.8, and no other benchmark.
 
-### Level 1
+#### Level 1
 
 | File | MB | goose ratio | zlib-ng ratio | libdeflate ratio | goose MB/s | zlib-ng MB/s | libdeflate MB/s |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -183,7 +185,7 @@ percent over step 3's (83.2 to 159.3 MB/s on `dickens`, 60.4 to 112.2 on `x-ray`
 The output is as at step 3, but for a few bytes: smaller than zlib-ng's on all seven
 files, and 1.3 to 20 percent larger than libdeflate's.
 
-### Level 6
+#### Level 6
 
 | File | MB | goose ratio | zlib-ng ratio | libdeflate ratio | goose MB/s | zlib-ng MB/s | libdeflate MB/s |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -202,7 +204,7 @@ libdeflate's it ties on `dickens` and is up to 4 percent larger, on `x-ray`. Goo
 loses every rate: 1.3 to 1.9 times slower than zlib-ng and 1.5 to 2.1 times slower
 than libdeflate. At step 3 it lost every ratio, by 2 to 56 percent against zlib-ng.
 
-### Level 9
+#### Level 9
 
 | File | MB | goose ratio | zlib-ng ratio | libdeflate ratio | goose MB/s | zlib-ng MB/s | libdeflate MB/s |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -223,7 +225,7 @@ and libdeflate's is 4.5 percent smaller. libdeflate also finds matches of length
 and chooses block boundaries from the data, which the package doesn't; which of them
 accounts for `x-ray` is untested.
 
-### Small inputs
+#### Small inputs
 
 2026-10-12, task 001 step 4, same machine and package. A program built with `goose
 build` calls `compress::compress` (gzip) on the first N bytes of `dickens` 20,000,000 /
@@ -239,7 +241,7 @@ At step 3's 262,484-byte stream, level 1 took 20.2, 23.9, and 66.9 µs. `sample`
 three quarters of the 100-byte call in building the `Encoder`, zeroing and copying it
 ([findings](goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)).
 
-## Step 4: each change, measured on its own
+### Step 4: each change, measured on its own
 
 2026-10-12, task 001 step 4. Each change was built with `goose build` into a binary of
 its own and run against the build before it as `bench LEVEL FILE RUNS`, gzip, one-shot,
@@ -274,7 +276,7 @@ and without it moved rates by -3 to +5 percent, about the noise. Matches are sho
 level 6, the candidates extended on `dickens` match 5.7 bytes on average), and at
 levels 6 and 9 the time goes into walking the chains.
 
-### Choices that trade ratio for rate
+#### Choices that trade ratio for rate
 
 Same method. Output in bytes, rate in MB/s.
 

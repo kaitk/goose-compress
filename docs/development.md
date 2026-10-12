@@ -125,7 +125,8 @@ LEVELS="1 6 9" RUNS=5 FILES=dickens bench/run.sh
 ```
 
 The level is passed to each library as it is. Record results in `docs/results.md` with
-what `AGENTS.md` asks for.
+what `AGENTS.md` asks for, under the machine's own section; a new machine gets a section
+that starts with its hardware, OS, compiler, and library builds.
 
 To compare a change, build `bench/bench.goose` before and after it into two binaries
 with `goose build -o`, and run them in alternating rounds on the same files: the

@@ -16,7 +16,7 @@ shortest.
 
 | | Encoding | Notes |
 |---|---|---|
-| 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.1 to 2.1 times slower than zlib-ng and libdeflate at levels 1 and 6 ([results](docs/results.md)). |
+| 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.1 to 2.1 times slower than zlib-ng and libdeflate at levels 1 and 6 on an M1 Pro ([results](docs/results.md)). |
 | 🟢 | zlib (HTTP's `deflate`) | The same DEFLATE stream as gzip, with the zlib header and Adler-32. |
 | 🟢 | Raw DEFLATE | The same stream with no wrapper. |
 | 🔴 | zstd | Later, in this package, once gzip is measured. |
