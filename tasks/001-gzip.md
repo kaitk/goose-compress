@@ -37,14 +37,14 @@ nearest levels, taking from their designs what Goose can express (requested
 - [x] Step 3: dynamic Huffman tables, passing the same tests
 - [x] Step 4: rate and ratio per level against libdeflate and zlib-ng at their nearest
       levels, on the same inputs and machine, with how they were measured, in
-      `docs/results.md`
+      `docs/results-history.md`
 - [x] Findings from the work recorded in `docs/goose-findings.md`
 
 ## Step 1
 
 Stored blocks only, so every level stores. At level 0, where all three store, the
 package compresses 342-345 MB/s against libdeflate's 21-32 GB/s and zlib-ng's 7.0-7.4
-GB/s (`docs/results.md`). The gap is CRC-32: one table lookup a byte, against the
+GB/s (`docs/results-history.md`). The gap is CRC-32: one table lookup a byte, against the
 libraries' carryless-multiply CRC, which Goose can't express
 ([findings](../docs/goose-findings.md#goose-has-no-carryless-multiply)).
 
@@ -62,7 +62,7 @@ At level 1 the package compresses 65-159 MB/s on 7 Silesia files, 1.9 to 3.7 tim
 slower than zlib-ng and libdeflate. Its output is smaller than zlib-ng's, which uses
 the same fixed tables, on six files of seven; libdeflate's is 13 to 32 percent
 smaller than the package's. At level 6 it does a level 1's work, so it loses every
-ratio (`docs/results.md`).
+ratio (`docs/results-history.md`).
 
 ## Step 3
 
@@ -77,12 +77,12 @@ At level 1 the package's output is smaller than zlib-ng's on all seven Silesia f
 and 1.3 to 20 percent larger than libdeflate's (13 to 32 percent at step 2). It
 compresses 60-146 MB/s, 2.1 to 3.9 times slower than zlib-ng and 2.3 to 3.8 times
 slower than libdeflate. At level 6 it still does a level 1's work and loses every
-ratio, with 2 to 56 percent more output than zlib-ng (`docs/results.md`).
+ratio, with 2 to 56 percent more output than zlib-ng (`docs/results-history.md`).
 
 ## Step 4
 
 Each change was measured against the build before it, and kept only where it paid
-(`docs/results.md`, "Step 4: each change"). Kept: CRC-32 by slice-by-16 (346 MB/s to
+(`docs/results-history.md`, "Step 4: each change"). Kept: CRC-32 by slice-by-16 (346 MB/s to
 2.8 GB/s), a bit writer that appends 32 bits at once and codes a block's symbols with
 8-byte stores, and comparing a candidate's 4 hashed bytes at once before extending it.
 Levels 2 to 9 now search hash chains, and 5 to 9 match lazily, with libdeflate's
@@ -101,7 +101,7 @@ smaller than zlib-ng's on five files, the same on one, and 1 percent larger on `
 and up to 4 percent larger than libdeflate's. It compresses 43-114 MB/s, 1.3 to 1.9
 times slower than zlib-ng and 1.5 to 2.1 times slower than libdeflate. Level 9 is faster
 than zlib-ng on `x-ray` and 1.4 to 3.1 times slower on the other six files
-(`docs/results.md`).
+(`docs/results-history.md`).
 
 Not reached: the libraries' rates. What's left is mostly the chain search's fixed cost
 a position at levels 2 to 9, and CRC-32 at level 0. The findings this step recorded are

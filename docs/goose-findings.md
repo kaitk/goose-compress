@@ -24,7 +24,7 @@ Found on `5c83a5a`, task 001. Status: open
 
 CRC-32 runs at about 345 MB/s on an M1 Pro, one table lookup a byte. libdeflate and
 zlib-ng fold the CRC with a carryless multiply (`PMULL` on arm64, `PCLMULQDQ` on
-x86-64), at 7-32 GB/s with the copy included (`docs/results.md`). Goose has no such
+x86-64), at 7-32 GB/s with the copy included (`docs/results-history.md`). Goose has no such
 operation, and no way to ask for one: `simd fn` builds wider versions on x86-64 only
 (spec §7.12), and C compilers don't turn a CRC loop into carryless multiplies. Expected:
 a carryless multiply, or a CRC-32 in the stdlib that uses one where the CPU has it.

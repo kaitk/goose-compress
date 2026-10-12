@@ -16,7 +16,7 @@ shortest.
 
 | | Encoding | Notes |
 |---|---|---|
-| 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.1 to 2.1 times slower than zlib-ng and libdeflate at levels 1 and 6 on an M1 Pro, 1.2 to 2.3 times on a Ryzen ([results](docs/results.md)). |
+| 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.05 to 1.7 times slower than zlib-ng and libdeflate at levels 1 and 6 on an M1 Pro, 1.2 to 2.3 times on a Ryzen ([results](docs/results.md)). |
 | 🟢 | zlib (HTTP's `deflate`) | The same DEFLATE stream as gzip, with the zlib header and Adler-32. |
 | 🟢 | Raw DEFLATE | The same stream with no wrapper. |
 | 🔴 | zstd | Later, in this package, once gzip is measured. |
@@ -97,19 +97,19 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
 ## Benchmarks
 
 Against libdeflate and zlib-ng, built in release mode: [docs/results.md](docs/results.md).
-On an M1 Pro, with seven Silesia files:
+On an M1 Pro, with seven Silesia files, at `ce13855`:
 
 - Level 0 stores at 2.8 GB/s (on `dickens` and `x-ray`), against zlib-ng's 7 GB/s and
   libdeflate's 21-32 GB/s.
   The gap is CRC-32, which both libraries compute with a carryless multiply that Goose
   can't express ([findings](docs/goose-findings.md#goose-has-no-carryless-multiply)).
-- Level 1 compresses 112-351 MB/s, 1.1 to 1.7 times slower than zlib-ng and 1.3 to
-  1.7 times slower than libdeflate. Its output is smaller than zlib-ng's on all seven
-  files and 1.3 to 20 percent larger than libdeflate's.
-- Level 6 compresses 43-114 MB/s, 1.3 to 1.9 times slower than zlib-ng and 1.5 to
-  2.1 times slower than libdeflate. Its output is smaller than zlib-ng's on five files,
-  the same on one, and 1 percent larger on `xml`; it's 0 to 4 percent larger than
-  libdeflate's.
+- Level 1 compresses 120-393 MB/s, 1.05 to 1.5 times slower than zlib-ng and 1.2 to
+  1.5 times slower than libdeflate. Its output is smaller than zlib-ng's on all seven
+  files and 0.5 to 20 percent larger than libdeflate's.
+- Level 6 compresses 46-127 MB/s, 1.25 to 1.7 times slower than zlib-ng and 1.4 to
+  1.7 times slower than libdeflate, and faster than zlib-ng on `x-ray` (73 MB/s
+  against 65). Its output is smaller than zlib-ng's on five files, the same on one,
+  and 1 percent larger on `xml`; it's 0 to 4 percent larger than libdeflate's.
 
 On a Ryzen 7 5800X3D under Windows, with the same files and output, at `43cb937`:
 

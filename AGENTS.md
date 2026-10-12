@@ -6,7 +6,8 @@
 - Architecture decisions: `docs/architecture/README.md`
 - Toolchain, local setup, tests, and benchmarks: `docs/development.md`
 - Goose compiler and stdlib gaps found here: `docs/goose-findings.md`
-- Benchmark results: `docs/results.md`
+- Benchmark results: `docs/results.md` (each machine's latest run) and
+  `docs/results-history.md` (earlier runs and each change's measurements)
 - Task tracking: `tasks/` (see `tasks/README.md`)
 - Writing docs: `.claude/skills/google-style/SKILL.md`
 - The formats: RFC 1951 (DEFLATE), RFC 1950 (zlib), and RFC 1952 (gzip).

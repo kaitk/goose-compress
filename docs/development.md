@@ -148,9 +148,12 @@ export PATH="$VS/VC/Tools/Llvm/x64/bin:$PATH"
 GOOSE=../goose/build/Release/goose.exe bench/build.sh
 ```
 
-The level is passed to each library as it is. Record results in `docs/results.md` with
-what `AGENTS.md` asks for, under the machine's own section; a new machine gets a section
-that starts with its hardware, OS, compiler, and library builds.
+The level is passed to each library as it is. Record results with what `AGENTS.md`
+asks for, under the machine's own section; a new machine gets a section that starts
+with its hardware, OS, compiler, and library builds. `docs/results.md` holds each
+machine's latest full run only: when a new one replaces it, move the old one to
+`docs/results-history.md`, where each change's measurements and other one-off runs go
+too.
 
 To compare a change, build `bench/bench.goose` before and after it into two binaries
 with `goose build -o`, and run them in alternating rounds on the same files: the

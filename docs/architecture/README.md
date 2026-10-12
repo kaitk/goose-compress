@@ -59,7 +59,7 @@ until the task named beside it confirms or replaces it.
   4 GB back costs a probe and never gives a wrong match, and a slide rewrites nothing.
   zlib's table of `u16` window positions takes half the memory but is rewritten at
   each slide, and `u16` offsets in the same memory let stale entries through
-  (`docs/results.md`, task 003). Against 2^15 entries, 2^16 made level 1's output 0.3
+  (`docs/results-history.md`, task 003). Against 2^15 entries, 2^16 made level 1's output 0.3
   to 0.8 percent smaller, and every rate measured faster on the Ryzen, by up to 22
   percent at levels 6 and 9 on `x-ray`; the M1 Pro gained on two files of four (task
   001 step 4). It costs 131,072 bytes a stream, taken as worth it (2026-10-12).
@@ -67,7 +67,7 @@ until the task named beside it confirms or replaces it.
   made output 3 to 8 percent larger on six Silesia files of seven; hashing only inside
   matches of up to 32 bytes was faster only on the most compressible files (`nci` 17
   percent, `xml` 9 percent), where level 1 is fastest already, and 2.6 percent larger
-  on `nci` (`docs/results.md`, task 001 step 4, 2026-10-12).
+  on `nci` (`docs/results-history.md`, task 001 step 4, 2026-10-12).
 - **Hash chains as distances, after libdeflate's `hc_matchfinder`.** From level 2,
   each stream offset's slot (offset modulo 32,768) holds the distance back to the
   previous offset in its bucket, as a `u16`, or 65,535 when it's farther than 32,768.
@@ -99,7 +99,7 @@ until the task named beside it confirms or replaces it.
   then fixed, as zlib breaks them. Incompressible input grows by about 5 bytes every
   16 KB (task 001 step 3, 2026-10-12).
 - **Blocks keep ending at 16,384 symbols and at a slide that would drop their first
-  bytes.** Both alternatives were measured at step 3 (`docs/results.md`, "Where blocks
+  bytes.** Both alternatives were measured at step 3 (`docs/results-history.md`, "Where blocks
   end"). Running a block past the slide, as zlib does, and blocks of 32,768 or 65,536
   symbols each gave more output on Silesia, up to 0.55 percent, and larger blocks hold
   up to 196,608 bytes more a stream. A smaller block's code follows the data more
@@ -128,7 +128,7 @@ until the task named beside it confirms or replaces it.
   output on text. zlib's `deflate_slow` was the alternative; its parameters are tuned
   for a 3-byte hash and a different lazy rule. Shallower searches at level 6 (depth
   16, nice 32) were 22 to 30 percent faster on four Silesia files and no faster on
-  `x-ray`, for up to 4.7 percent more output, on `xml` (`docs/results.md`). `compress` runs the streaming encoder, so a stream that isn't
+  `x-ray`, for up to 4.7 percent more output, on `xml` (`docs/results-history.md`). `compress` runs the streaming encoder, so a stream that isn't
   flushed gives the same bytes either way (task 001 step 4, 2026-10-12).
 
   | Level | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
