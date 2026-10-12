@@ -8,7 +8,7 @@ benchmarks have run on macOS so far (2026-10-12); they need a POSIX shell, Pytho
 
 | Tool | Version used (2026-10-12) | For |
 |---|---|---|
-| Goose compiler | `5c83a5a`, the pin in `README.md` | everything |
+| Goose compiler | `c38dc0f`, the pin in `README.md` | everything |
 | macOS | 26.3.1, Apple M1 Pro | |
 | C compiler | Apple clang 21.0.0 (`clang-2100.0.123.102`) | `goose build`, `bench/` |
 | CMake | 4.4.4 (Homebrew) | building the Goose compiler, libdeflate, and zlib-ng |
@@ -24,7 +24,7 @@ Leave it on the pinned commit and don't edit it (`AGENTS.md`).
 
 ```sh
 git clone -o upstream https://github.com/aardappel/goose.git ../goose
-git -C ../goose checkout 5c83a5a
+git -C ../goose checkout c38dc0f
 cmake -S ../goose -B ../goose/build-macos -DCMAKE_BUILD_TYPE=Release
 cmake --build ../goose/build-macos -j
 export GOOSE=$PWD/../goose/build-macos/goose
