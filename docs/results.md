@@ -436,6 +436,28 @@ of level 1's time in `end_block`, in a loop that shifts one bit an iteration: st
 `clz`, which clang turns into one instruction on arm64 but not on x86-64
 ([findings](goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)).
 
+### Levels 1, 6, and 9 at `43cb937`
+
+2026-10-12, task 003, package at `43cb937`: the chain search's one range test and the
+code tables on top of `540ae3c`. `LEVELS="1 6 9" bench/run.sh`: gzip output, one-shot,
+the whole file in memory, 10 runs per cell, same machine, compilers, and libraries.
+MB/s is the median of the 10 runs; the ratios are as at `540ae3c`.
+
+| File | Level 1 goose | zlib-ng | libdeflate | Level 6 goose | zlib-ng | libdeflate | Level 9 goose | zlib-ng | libdeflate |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 174.3 | 284.4 | 261.7 | 47.7 | 66.9 | 74.8 | 22.1 | 27.5 | 32.9 |
+| webster | 195.3 | 334.2 | 291.0 | 66.4 | 84.4 | 105.1 | 26.3 | 43.1 | 38.9 |
+| xml | 306.5 | 671.9 | 504.9 | 117.8 | 163.1 | 188.6 | 39.6 | 79.9 | 64.3 |
+| nci | 379.2 | 881.2 | 629.7 | 123.7 | 212.7 | 238.0 | 28.6 | 71.5 | 63.5 |
+| mozilla | 192.1 | 316.5 | 268.4 | 70.2 | 92.3 | 119.0 | 18.7 | 27.6 | 31.4 |
+| samba | 248.8 | 434.8 | 366.8 | 86.3 | 118.5 | 136.6 | 29.7 | 50.9 | 47.1 |
+| x-ray | 129.8 | 158.1 | 160.5 | 60.7 | 74.3 | 119.1 | 58.0 | 43.3 | 101.6 |
+
+Goose beats zlib-ng's rate on `x-ray` at level 9, 58.0 MB/s against 43.3, and loses
+every other rate. At level 1 it's 1.2 to 2.3 times slower than zlib-ng and 1.2 to 1.7
+times slower than libdeflate (1.5 to 4.8 and 1.5 to 3.5 at `540ae3c`); at level 6, 1.2
+to 1.7 and 1.6 to 2.0 times; at level 9, up to 2.5 and 1.5 to 2.2 times.
+
 ### Task 003: each change, measured on its own
 
 2026-10-12, task 003, Goose `c38dc0f`, same machine, compilers, and libraries. Each
@@ -472,3 +494,23 @@ instead of std's `clz`, against `b44ed4f`, gzip, `RUNS` 5:
 Kept: 1.2 to 2.1 times faster at level 1, 14 to 27 percent at level 6, and 9 to 16
 percent at level 9, with the same bytes. On the M1 Pro the code tables were within the
 noise, at -1.7 to +3.1 percent (step 4).
+
+Two changes the M1 Pro turned down at step 4, run again against `43cb937`, gzip,
+`RUNS` 5, in the same 3 rounds:
+
+| Change | Level | dickens | mozilla | x-ray | xml | Kept |
+|---|---:|---|---|---|---|---|
+| A hash table of 2^16 `u32` entries instead of 2^15 | 1 | 177.7 → 180.9 | 192.6 → 199.4 | 130.3 → 131.6 | 311.1 → 312.2 | no |
+| | 6 | 48.2 → 48.6 | 70.3 → 74.3 | 61.4 → 73.4 | 120.4 → 121.4 | |
+| | 9 | 22.2 → 22.6 | 18.8 → 19.1 | 58.3 → 71.1 | 40.1 → 40.5 | |
+| 8-byte extension, first differing byte by shifts | 1 | 177.7 → 177.7 | 192.6 → 188.7 | 130.3 → 127.8 | 311.1 → 325.2 | no |
+| | 6 | 48.2 → 48.4 | 70.3 → 71.5 | 61.4 → 60.0 | 120.4 → 125.8 | |
+| | 9 | 22.2 → 21.9 | 18.8 → 19.6 | 58.3 → 57.0 | 40.1 → 42.7 | |
+
+The larger hash table is faster in all 12 cells, by 19 and 22 percent on `x-ray` at
+levels 6 and 9 and 6 percent on `mozilla` at level 6, and its output is 0.3 to 0.8
+percent smaller at level 1 (`dickens` 4,371,843 to 4,342,576 bytes, `x-ray` 6,383,613
+to 6,332,212) and within a few hundred bytes at 6 and 9. It costs 131,072 more bytes a
+stream, as on the M1 Pro, where it gained on two files of four; it stays out until the
+memory budget says otherwise. The 8-byte extension gains on `xml` and loses on `x-ray`
+at every level, as on the M1 Pro.

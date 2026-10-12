@@ -16,7 +16,7 @@ shortest.
 
 | | Encoding | Notes |
 |---|---|---|
-| 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.1 to 2.1 times slower than zlib-ng and libdeflate at levels 1 and 6 on an M1 Pro ([results](docs/results.md)). |
+| 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.1 to 2.1 times slower than zlib-ng and libdeflate at levels 1 and 6 on an M1 Pro, 1.2 to 2.3 times on a Ryzen ([results](docs/results.md)). |
 | 🟢 | zlib (HTTP's `deflate`) | The same DEFLATE stream as gzip, with the zlib header and Adler-32. |
 | 🟢 | Raw DEFLATE | The same stream with no wrapper. |
 | 🔴 | zstd | Later, in this package, once gzip is measured. |
@@ -104,6 +104,15 @@ On an M1 Pro, with seven Silesia files:
   2.1 times slower than libdeflate. Its output is smaller than zlib-ng's on five files,
   the same on one, and 1 percent larger on `xml`; it's 0 to 4 percent larger than
   libdeflate's.
+
+On a Ryzen 7 5800X3D under Windows, with the same files and output, at `43cb937`:
+
+- Level 1 compresses 130-379 MB/s, 1.2 to 2.3 times slower than zlib-ng and 1.2 to
+  1.7 times slower than libdeflate.
+- Level 6 compresses 48-124 MB/s, 1.2 to 1.7 times slower than zlib-ng and 1.6 to 2.0
+  times slower than libdeflate.
+- Level 0 zlib output, a copy and Adler-32 as a `simd fn` in AVX2, runs at 10-15 GB/s,
+  against zlib-ng's 20-43 GB/s and libdeflate's 16-25 GB/s.
 
 ## Credits
 
