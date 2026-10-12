@@ -424,6 +424,19 @@ unchanged (-0.8 to +0.4 percent). The likely cause is that clearing the window l
 in the cache just before the input is copied in, after the 256 KB clear of the hash
 table has pushed the rest out. Not kept.
 
+#### After the Ryzen's changes
+
+Same method as the changes above, under `LC_ALL=C`, at a load average of 6.3 to 6.7,
+against `ededfce`:
+
+| Change | Level | dickens | mozilla | x-ray | xml | Kept |
+|---|---:|---|---|---|---|---|
+| Count symbols as they're added, not in a pass at the block's end | 1 | 163.6 → 175.1 | 177.9 → 191.0 | 107.0 → 118.9 | 293.5 → 303.3 | yes |
+| The same, run again | 1 | 162.7 → 176.5 | | 107.7 → 119.7 | | |
+| The same | 6 | 44.9 → 45.7 | 68.0 → 69.7 | 66.9 → 69.4 | 112.6 → 116.3 | |
+
+The counts add 1,272 bytes to a stream, 460,394 in all.
+
 ## AMD Ryzen 7 5800X3D, Windows
 
 - Desktop on an MSI `MS-7A34` board, AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,

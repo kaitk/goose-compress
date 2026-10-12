@@ -69,9 +69,9 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
 - **`compress::compress(data, out, format = GZIP, level = DEFAULT_LEVEL)`**: compresses
   `data` whole into one stream. It reuses one encoder for each program instance (each
   thread program has its own), built at the first call, so the program holds its
-  459,122 bytes from then on.
+  460,394 bytes from then on.
 - **`compress::encoder(format = GZIP, level = DEFAULT_LEVEL)`**: a stream,
-  `compress::Encoder`. It's a fixed-size value of 459,122 bytes, so it fits in an
+  `compress::Encoder`. It's a fixed-size value of 460,394 bytes, so it fits in an
   array of per-connection slots: a 64 KB window, a 256 KB hash table, 64 KB of hash
   chains, and a 64 KB block of symbols ([architecture](docs/architecture/README.md)).
   Building one copies its arrays several times at the pinned compiler, about 145 µs on

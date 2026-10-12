@@ -38,12 +38,13 @@ until the task named beside it confirms or replaces it.
   knows, made level 6 2 to 7 percent slower on the Ryzen. A 100-byte `compress` went
   from 108 to 7.3 µs on the Ryzen under Windows, for 459,122 bytes held for the
   program's life (task 003, 2026-10-12).
-- **A stream holds 459,122 bytes**, whatever its level: a window of 65,800 bytes, a
-  hash table of 262,144, hash chains of 65,536, and a block of symbols of 65,536.
+- **A stream holds 460,394 bytes**, whatever its level: a window of 65,800 bytes, a
+  hash table of 262,144, hash chains of 65,536, a block of symbols of 65,536, and
+  the block's symbol counts, 1,264.
   Level 0 keeps its pending input in the window, and level 1 leaves the chains unused.
   zlib's defaults take 256 KB and a few more, by its own formula. The chains added 65,566 bytes to step 2's
-  262,484 (task 001 step 4, 2026-10-12), and the larger hash table 131,072 more
-  (task 003, 2026-10-12).
+  262,484 (task 001 step 4, 2026-10-12), the larger hash table 131,072 more, and
+  counting symbols as they're added 1,272 more (task 003, 2026-10-12).
 - **The window is 32 KB of history, 32 KB of input, and 264 bytes of lookahead.** Input
   is copied in, and when the window fills it slides down 32 KB. Matching stops 264
   bytes short of its end, so it always stops past 64 KB and a slide keeps the full

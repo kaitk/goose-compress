@@ -68,6 +68,11 @@ struct Lz {
     // above bit 8 and its length minus 3 below.
     nsym: i64,
     syms: u32[SYM_MAX],
+    // The block's symbol counts, kept as symbols are added, and the bits its
+    // lengths' and distances' extra bits take, which every code spends alike.
+    lfreq: u32[LIT_CODES],
+    dfreq: u32[DIST_CODES],
+    extra: i64,
     win: u8[WIN_SIZE],
 }
 
@@ -87,6 +92,9 @@ fn lz_reset(z: Lz&, level: i64) {
     z.warm = 0;
     z.nsym = 0;
     for &x in z.syms { x = 0; }
+    for &x in z.lfreq { x = 0; }
+    for &x in z.dfreq { x = 0; }
+    z.extra = 0;
     for &x in z.win { x = 0; }
 }
 
@@ -150,12 +158,12 @@ fn match_fast(z: Lz&, out: u8[>..]&, end: i64) {
             }
         }
         if len >= MIN_MATCH {
-            add_sym(z, out, ((dist as! u32) << 8) | (len - MIN_MATCH) as! u32, len);
+            add_match(z, out, dist, len);
             for i in p + 1..min(p + len, z.fill - 3) {
                 z.head[hash4(load32(z.win, i))] = z.base + i as! u32;
             }
         } else {
-            add_sym(z, out, z.win[p], 1);
+            add_lit(z, out, z.win[p]);
         }
     }
 }
@@ -179,7 +187,7 @@ fn match_chains(z: Lz&, out: u8[>..]&, end: i64) {
             dist = dist0;
         }
         if len < 4 {
-            add_sym(z, out, z.win[p], 1);
+            add_lit(z, out, z.win[p]);
             continue;
         }
         // The positions after p already inserted.
@@ -190,7 +198,7 @@ fn match_chains(z: Lz&, out: u8[>..]&, end: i64) {
             if better(len1, dist1, len, dist, 2) {
                 z.ahead_len = len1;
                 z.ahead_dist = dist1;
-                add_sym(z, out, z.win[p], 1);
+                add_lit(z, out, z.win[p]);
                 continue;
             }
             if lazy > 1 {
@@ -199,13 +207,13 @@ fn match_chains(z: Lz&, out: u8[>..]&, end: i64) {
                 if better(len2, dist2, len, dist, 6) {
                     z.ahead_len = len2;
                     z.ahead_dist = dist2;
-                    add_sym(z, out, z.win[p], 1);
-                    add_sym(z, out, z.win[p + 1], 1);
+                    add_lit(z, out, z.win[p]);
+                    add_lit(z, out, z.win[p + 1]);
                     continue;
                 }
             }
         }
-        add_sym(z, out, ((dist as! u32) << 8) | (len - MIN_MATCH) as! u32, len);
+        add_match(z, out, dist, len);
         for i in p + 1 + done..min(p + len, z.fill - 3) { insert(z, i); }
     }
 }
@@ -284,10 +292,25 @@ fn search(z: Lz&, p: i64, floor: i64, depth: i64, nice: i64) -> i64, i64 {
     return best, best_dist;
 }
 
-fn add_sym(z: Lz&, out: u8[>..]&, sym: u32, advance: i64) {
-    z.syms[z.nsym] = sym;
+fn add_lit(z: Lz&, out: u8[>..]&, b: u8) {
+    z.syms[z.nsym] = b;
+    z.lfreq[b]++;
     z.nsym++;
-    z.pos += advance;
+    z.pos++;
+    if z.nsym == SYM_MAX { end_block(z, out, false); }
+}
+
+fn add_match(z: Lz&, out: u8[>..]&, dist: i64, len: i64) {
+    let x = (len - MIN_MATCH) as! u32;
+    let d = dist as! u32;
+    z.syms[z.nsym] = d << 8 | x;
+    let lc, lbits, lextra = len_code(x);
+    let dc, dbits, dextra = dist_code(d);
+    z.lfreq[lc]++;
+    z.dfreq[dc]++;
+    z.extra += lbits + dbits;
+    z.nsym++;
+    z.pos += len;
     if z.nsym == SYM_MAX { end_block(z, out, false); }
 }
 
@@ -326,21 +349,9 @@ fn match_len(win: const u8[:], a: i64, b: i64, most: i64) -> i64 {
 // block.
 fn end_block(z: Lz&, out: u8[>..]&, last: bool) {
     let syms = z.syms[..z.nsym];
-    var lfreq: u32[LIT_CODES] = [0; LIT_CODES];
-    var dfreq: u32[DIST_CODES] = [0; DIST_CODES];
-    // The lengths' and distances' extra bits, which every code spends alike.
-    var extra = 0;
-    for s in syms {
-        if s < 256 {
-            lfreq[s]++;
-        } else {
-            let lc, lbits, lextra = len_code(s & 0xff);
-            let dc, dbits, dextra = dist_code(s >> 8);
-            lfreq[lc]++;
-            dfreq[dc]++;
-            extra += lbits + dbits;
-        }
-    }
+    let lfreq .= z.lfreq;
+    let dfreq .= z.dfreq;
+    let extra = z.extra;
     lfreq[END_BLOCK] = 1;
 
     var lit = Huff { .. };
@@ -377,6 +388,9 @@ fn end_block(z: Lz&, out: u8[>..]&, last: bool) {
         put_syms(z, out, syms, lit, dist);
     }
     z.nsym = 0;
+    for &x in z.lfreq { x = 0; }
+    for &x in z.dfreq { x = 0; }
+    z.extra = 0;
     z.block_start = z.pos;
 }
 
