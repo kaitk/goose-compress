@@ -42,12 +42,34 @@ fn encoder(format: i64 = GZIP, level: i64 = DEFAULT_LEVEL) -> Encoder {
                      .. };
 }
 
+// Starts e over as a new stream, as encoder(format, level) would make it, in
+// place: building an Encoder copies each of its arrays several times
+// (docs/goose-findings.md), and zeroing them where they are doesn't.
+fn reset(e: Encoder&, format: i64 = GZIP, level: i64 = DEFAULT_LEVEL) {
+    assert(format == GZIP || format == ZLIB || format == RAW);
+    assert(level >= 0 && level <= 9);
+    e.format = format;
+    e.level = level;
+    e.started = false;
+    e.finished = false;
+    e.check = if format == ZLIB { 1 } else { 0 };
+    e.size = 0;
+    lz_reset(e.z, level);
+}
+
+// The encoder compress resets for each stream, built at its first call. Each
+// program instance has its own (spec §11.1). It's held in a resizable rather
+// than as an Encoder global, whose fixed address clang compiles the matcher
+// around: that ran level 6 2 to 7 percent slower on the Ryzen.
+var ONE_SHOT: Encoder[>..];
+
 // Compresses `data` whole and appends the stream to `out`.
 fn compress(data: const u8[:], out: u8[>..]&, format: i64 = GZIP,
             level: i64 = DEFAULT_LEVEL) {
-    var e = encoder(format, level);
-    write(e, data, out);
-    finish(e, out);
+    if ONE_SHOT.len == 0 { ONE_SHOT.push(encoder()); }
+    reset(ONE_SHOT[0], format, level);
+    write(ONE_SHOT[0], data, out);
+    finish(ONE_SHOT[0], out);
 }
 
 // Compresses `data` into the stream, appending whole blocks to `out` and holding

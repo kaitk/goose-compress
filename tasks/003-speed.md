@@ -36,7 +36,11 @@ In rough order of expected payoff:
 4. Small inputs: `compress` of 100 bytes takes 24 µs, mostly building the `Encoder`
    ([findings](../docs/goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)).
    Look for a way within the language that the findings entry doesn't rule out
-   already; if there is none, leave it to the maintainer.
+   already; if there is none, leave it to the maintainer. Done on the Windows
+   machine: `reset` zeroes an encoder in place, and `compress` resets one it keeps
+   per program instance, 108 to 7.3 µs for 100 bytes there; the M1 Pro's figure is
+   unmeasured. `var e: Encoder;` as a local doesn't compile ("may be used before it
+   is assigned").
 5. Adler-32 for zlib output: done on the Windows machine, as a `simd fn` summing 32
    lanes (540ae3c), and measured there (`docs/results.md`).
 6. std's `clz` on x86-64, where clang leaves it a loop: done on the Windows machine.

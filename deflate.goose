@@ -18,7 +18,7 @@ let LOOKAHEAD = 2 + MAX_MATCH + 4;
 // 32 KB of history, 32 KB of input, and the lookahead. When the window fills,
 // it slides down by WSIZE, which keeps a full WSIZE behind the next position.
 let WIN_SIZE = 2 * WSIZE + LOOKAHEAD;
-let HASH_BITS = 15;
+let HASH_BITS = 16;
 let HASH_SIZE = 1 << HASH_BITS;
 // A block ends when it holds this many symbols, as zlib's at its default
 // memory level.
@@ -69,6 +69,25 @@ struct Lz {
     nsym: i64,
     syms: u32[SYM_MAX],
     win: u8[WIN_SIZE],
+}
+
+// Sets z as `Lz { level: level, .. }` would.
+fn lz_reset(z: Lz&, level: i64) {
+    z.level = level;
+    z.bits = 0;
+    z.nbits = 0;
+    z.base = 0;
+    z.fill = 0;
+    z.pos = 0;
+    z.block_start = 0;
+    for &x in z.head { x = 0; }
+    for &x in z.prev { x = 0; }
+    z.ahead_len = 0;
+    z.ahead_dist = 0;
+    z.warm = 0;
+    z.nsym = 0;
+    for &x in z.syms { x = 0; }
+    for &x in z.win { x = 0; }
 }
 
 fn lz_write(z: Lz&, data: const u8[:], out: u8[>..]&) {

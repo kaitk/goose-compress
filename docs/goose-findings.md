@@ -90,8 +90,22 @@ On an M1 Pro this takes 1.2 s, 12 µs a `make`; with `win: u8[..65536]` and a `p
 quarters of the 20 µs `compress` took for 100 bytes at level 1 (the rest is coding
 the block), by `sample` (task 001 step 4).
 
-Workaround: none in the package; every stream pays it once. A caller that keeps an
-encoder per connection builds it once per stream, not per write.
+On Windows the copies cost about 5 times as much (`c38dc0f`, task 003). `compress` of
+100 bytes at level 1, with a 2^16-entry hash table, takes 157 µs on a Ryzen 7 5800X3D
+under Windows, and 30 µs on the same CPU under Linux, most of it `memset` and `memcpy`
+there. Each array's temporary
+lives in a data-stack region of its own, so a copy's source and destination are at
+nearly the same offset within a 4 KB page, and the Windows C runtime's `memcpy` is
+slow on Zen 3 exactly then: 128 KB copies in 31.4 µs when the destination is 16 bytes
+past the source modulo 4,096, and in 1.9 to 2.1 µs at 32 bytes or more. glibc's
+`memcpy` takes 1.0 µs either way. The 2^15-entry table, 128 KB less to zero and copy,
+takes 112 µs on Windows.
+
+`var e: Encoder;` with only a type isn't a way around the literal: the compiler
+rejects a read of `e` as "may be used before it is assigned".
+
+Workaround: build an encoder once and `reset` it for each stream, which zeroes its
+fields in place (task 003). `compress` does so with an encoder it keeps.
 
 ## `clz`, `ctz`, and `popcount` loop over the bits
 

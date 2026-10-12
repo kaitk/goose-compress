@@ -500,7 +500,7 @@ Two changes the M1 Pro turned down at step 4, run again against `43cb937`, gzip,
 
 | Change | Level | dickens | mozilla | x-ray | xml | Kept |
 |---|---:|---|---|---|---|---|
-| A hash table of 2^16 `u32` entries instead of 2^15 | 1 | 177.7 → 180.9 | 192.6 → 199.4 | 130.3 → 131.6 | 311.1 → 312.2 | no |
+| A hash table of 2^16 `u32` entries instead of 2^15 | 1 | 177.7 → 180.9 | 192.6 → 199.4 | 130.3 → 131.6 | 311.1 → 312.2 | yes |
 | | 6 | 48.2 → 48.6 | 70.3 → 74.3 | 61.4 → 73.4 | 120.4 → 121.4 | |
 | | 9 | 22.2 → 22.6 | 18.8 → 19.1 | 58.3 → 71.1 | 40.1 → 40.5 | |
 | 8-byte extension, first differing byte by shifts | 1 | 177.7 → 177.7 | 192.6 → 188.7 | 130.3 → 127.8 | 311.1 → 325.2 | no |
@@ -511,6 +511,38 @@ The larger hash table is faster in all 12 cells, by 19 and 22 percent on `x-ray`
 levels 6 and 9 and 6 percent on `mozilla` at level 6, and its output is 0.3 to 0.8
 percent smaller at level 1 (`dickens` 4,371,843 to 4,342,576 bytes, `x-ray` 6,383,613
 to 6,332,212) and within a few hundred bytes at 6 and 9. It costs 131,072 more bytes a
-stream, as on the M1 Pro, where it gained on two files of four; it stays out until the
-memory budget says otherwise. The 8-byte extension gains on `xml` and loses on `x-ray`
+stream, as on the M1 Pro, where it gained on two files of four. Kept afterwards, for the
+memory (2026-10-12). The 8-byte extension gains on `xml` and loses on `x-ray`
 at every level, as on the M1 Pro.
+
+#### Small inputs
+
+A program built with `goose build` calls `compress::compress` (gzip, level 1) on the
+first N bytes of `dickens` 20,000,000 / (N + 2,000) times in a row, 5 times over; a
+cell is the best of the 5 averages, in µs a call, best of 3 runs of the program.
+
+| Build | 100 bytes | 1,000 bytes | 10,000 bytes |
+|---|---:|---:|---:|
+| `43cb937`: 2^15 hash table, a new `Encoder` a call | 108.0 | 117.1 | 147.2 |
+| 2^16 hash table, a new `Encoder` a call | 152.4 | 158.3 | 189.5 |
+| 2^16, one global `Encoder`, `reset` a call | 7.3 | 11.9 | 41.6 |
+| 2^16, one `Encoder` in a global resizable, `reset` a call | 7.3 | 11.6 | 41.4 |
+
+Building an `Encoder` copies each of its arrays several times
+([findings](goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)),
+and the Windows C runtime's `memcpy` is slow on this CPU for the copies Goose makes:
+the same 100-byte call took 30 µs under Linux on the same CPU. Kept: `reset`, and
+`compress` resetting one encoder per program instance. As a plain global `Encoder` it
+made level 6 slower, against the build with a new `Encoder` a call (`bench 6 FILE 3`,
+3 alternating rounds, best median, MB/s):
+
+| Build | dickens | mozilla | x-ray | xml |
+|---|---:|---:|---:|---:|
+| A new `Encoder` a call | 48.3 | 74.0 | 72.2 | 121.2 |
+| A global `Encoder` | 47.3 | 71.3 | 67.3 | 119.6 |
+| An `Encoder` in a global resizable | 48.8 | 74.4 | 72.5 | 120.9 |
+
+Padding of 32 or 2,048 bytes before the global `Encoder` left `x-ray` at 69.4 to 70.0,
+so its placement isn't the cause: with the address known, clang compiles the matcher
+differently. In a resizable, the address is loaded at run time, and the rate is the
+same as before.

@@ -29,11 +29,21 @@ until the task named beside it confirms or replaces it.
   resizable array, so a program can keep one per connection in an indexable array of
   slots. It holds input until a block fills, so the bytes of a stream that isn't flushed
   don't depend on how its input was split across writes (task 001, 2026-10-12).
-- **A stream holds 328,050 bytes**, whatever its level: a window of 65,800 bytes, a
-  hash table of 131,072, hash chains of 65,536, and a block of symbols of 65,536.
+- **An encoder is reset in place, not rebuilt.** `reset` zeroes an `Encoder` where it
+  is, because a struct literal builds one through temporaries and copies each array
+  several times
+  ([findings](../goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)).
+  `compress` resets one encoder that each program instance builds at its first call
+  and keeps, held in a resizable global: a global `Encoder`, whose address clang
+  knows, made level 6 2 to 7 percent slower on the Ryzen. A 100-byte `compress` went
+  from 108 to 7.3 µs on the Ryzen under Windows, for 459,122 bytes held for the
+  program's life (task 003, 2026-10-12).
+- **A stream holds 459,122 bytes**, whatever its level: a window of 65,800 bytes, a
+  hash table of 262,144, hash chains of 65,536, and a block of symbols of 65,536.
   Level 0 keeps its pending input in the window, and level 1 leaves the chains unused.
-  zlib holds about as much at its defaults. The chains added 65,566 bytes to step 2's
-  262,484 (task 001 step 4, 2026-10-12).
+  zlib's defaults take 256 KB and a few more, by its own formula. The chains added 65,566 bytes to step 2's
+  262,484 (task 001 step 4, 2026-10-12), and the larger hash table 131,072 more
+  (task 003, 2026-10-12).
 - **The window is 32 KB of history, 32 KB of input, and 264 bytes of lookahead.** Input
   is copied in, and when the window fills it slides down 32 KB. Matching stops 264
   bytes short of its end, so it always stops past 64 KB and a slide keeps the full
@@ -41,14 +51,16 @@ until the task named beside it confirms or replaces it.
   positions a lazy level looks ahead, the longest match, and the 4 bytes hashed at its
   last position, so a match never depends on how much input a write brought. A flush
   or finish matches to the end of the input (task 001 steps 2 and 4, 2026-10-12).
-- **The hash table holds stream offsets, not window positions.** It's 2^15 `u32`
-  entries of each bucket's latest offset modulo 2^32, hashed from 4 bytes. Every
-  candidate is compared, so an entry that is stale or from 4 GB back costs a probe and
-  never gives a wrong match, and a slide rewrites nothing. zlib's table of `u16`
-  window positions takes half the memory but is rewritten at each slide. 2^16 entries,
-  as libdeflate's chains use, made level 6 up to 20 percent faster on `x-ray` and
-  level 1's output up to 0.8 percent smaller, for 131,072 more bytes a stream; not
-  taken (`docs/results.md`, task 001 step 4, 2026-10-12).
+- **The hash table holds stream offsets, not window positions.** It's 2^16 `u32`
+  entries, as libdeflate's chains use, of each bucket's latest offset modulo 2^32,
+  hashed from 4 bytes. Every candidate is compared, so an entry that is stale or from
+  4 GB back costs a probe and never gives a wrong match, and a slide rewrites nothing.
+  zlib's table of `u16` window positions takes half the memory but is rewritten at
+  each slide, and `u16` offsets in the same memory let stale entries through
+  (`docs/results.md`, task 003). Against 2^15 entries, 2^16 made level 1's output 0.3
+  to 0.8 percent smaller, and every rate measured faster on the Ryzen, by up to 22
+  percent at levels 6 and 9 on `x-ray`; the M1 Pro gained on two files of four (task
+  001 step 4). It costs 131,072 bytes a stream, taken as worth it (2026-10-12).
 - **Every position inside a match is hashed, at every level.** Skipping them at level 1
   made output 3 to 8 percent larger on six Silesia files of seven; hashing only inside
   matches of up to 32 bytes was faster only on the most compressible files (`nci` 17
