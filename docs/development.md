@@ -190,6 +190,8 @@ build/bench/bench 6 build/bench/corpus/mozilla 20 & sleep 1; sample bench 4 -fil
 - A constant plus a `u8` is a `u8`: `t[768 + b[4]]` fails with "constant 768 does not
   fit u8". Write `768 + b[4] as i64`.
 - `x as i64..end` parses as the variable-mode type `i64..`: write `(x as i64)..end`.
+  Likewise `x as i64 & (m)` parses as the reference type `i64&` followed by a call
+  ("this expression cannot be called"): write `(x as i64) & m`.
 - Several results go only into new names: `let a, b = f();`, not `a, b = f();` into
   existing variables.
 - Shrinking a `u8[>..]&` parameter, even after growing it in the same call, makes the

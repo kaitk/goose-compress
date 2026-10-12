@@ -353,9 +353,13 @@ fn load32(s: const u8[:], i: i64) -> u32 {
     return c[0] | (c[1] as u32) << 8 | (c[2] as u32) << 16 | (c[3] as u32) << 24;
 }
 
+// Slicing both runs first checks their bounds once, not at each byte.
 fn match_len(win: const u8[:], a: i64, b: i64, most: i64) -> i64 {
+    let x = win[a..a + most];
+    let y = win[b..b + most];
+    assert(x.len == y.len);
     var n = 0;
-    while n < most && win[a + n] == win[b + n] { n++; }
+    while n < x.len && x[n] == y[n] { n++; }
     return n;
 }
 

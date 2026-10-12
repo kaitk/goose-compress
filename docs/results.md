@@ -450,6 +450,27 @@ Then, against `d71eb59`, at a load average of 5.2 to 7.1:
 The packed result moved rates by -0.6 to +0.9 percent: the second result was cheap.
 The carried hash adds 12 bytes to a stream, 460,406 in all.
 
+Then, against `1f1ed62`, at a load average of 4.2 to 5.5 (9.3 once, just after
+`scripts/test.sh`):
+
+| Change | Level | dickens | mozilla | x-ray | xml | Kept |
+|---|---:|---|---|---|---|---|
+| Also load the window byte the next search's first candidate starts at | 6 | 46.4 → 46.8 | 71.6 → 71.1 | 73.2 → 74.2 | 116.1 → 117.2 | no |
+| Drop bounds checks: hash index, symbol store, `LEN_TAB`, `match_len` | 1 | 173.6 → 158.8 | 192.4 → 175.7 | 119.5 → 102.1 | 304.6 → 302.3 | no |
+| The same | 6 | 46.2 → 46.7 | 71.3 → 73.1 | 74.6 → 73.9 | 116.9 → 121.8 | |
+| Only the hash index masked to the table | 1 | 174.5 → 174.4 | | 119.0 → 119.9 | | no |
+| The same | 6 | 46.2 → 46.0 | 70.7 → 70.9 | | 116.1 → 115.9 | |
+| Only the symbol store and `LEN_TAB` masked | 1 | 173.4 → 158.3 | | 119.2 → 102.7 | | no |
+| Only `match_len` slicing both runs first | 1 | 175.4 → 175.0 | | 120.0 → 120.4 | | yes |
+| The same | 6 | 46.3 → 46.5 | 71.1 → 73.4 | | 116.0 → 123.0 | |
+| The same, run again | 6 | | 71.1 → 72.9 | 73.4 → 73.4 | 114.7 → 121.9 | |
+| The same | 9 | 22.6 → 22.8 | | 69.2 → 69.2 | 38.1 → 40.8 | |
+| The same | 1 | | 192.2 → 194.1 | | 301.4 → 317.6 | |
+
+Masking the symbol counter to `SYM_MAX` drops a bounds check that never fails, yet made
+level 1 9 to 14 percent slower; how clang compiled the loop around it wasn't examined.
+`match_len` keeps two slice checks a call in place of two index checks a byte.
+
 ## AMD Ryzen 7 5800X3D, Windows
 
 - Desktop on an MSI `MS-7A34` board, AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,
