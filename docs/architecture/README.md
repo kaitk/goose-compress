@@ -29,6 +29,34 @@ until the task named beside it confirms or replaces it.
   resizable array, so a program can keep one per connection in an indexable array of
   slots. It holds input until a block fills, so the bytes of a stream that isn't flushed
   don't depend on how its input was split across writes (task 001, 2026-10-12).
+- **A stream holds 262,484 bytes**, whatever its level: a window of 65,798 bytes, a
+  hash table of 131,072, and a block of symbols of 65,536. Level 0 keeps its pending
+  input in the window. zlib holds about as much at its defaults (task 001 step 2,
+  2026-10-12).
+- **The window is 32 KB of history, 32 KB of input, and 262 bytes of lookahead.** Input
+  is copied in, and when the window fills it slides down 32 KB. Matching stops 262
+  bytes short of its end, so it always stops past 64 KB and a slide keeps the full
+  32,768 bytes DEFLATE can reach; zlib reaches 32,506. Those 262 bytes are the longest
+  match and the 4 bytes hashed at its last position, so a match never depends on how
+  much input a write brought. A flush or finish matches to the end of the input (task
+  001 step 2, 2026-10-12).
+- **The hash table holds stream offsets, not window positions.** It's 2^15 `u32`
+  entries of each bucket's latest offset modulo 2^32, hashed from 4 bytes, probed once
+  a position. Every candidate is compared byte by byte, so an entry that is stale or
+  from 4 GB back costs a probe and never gives a wrong match, and a slide rewrites
+  nothing. zlib's table of `u16` window positions takes half the memory but is
+  rewritten at each slide. Every position inside a match is hashed too: ratio first,
+  and step 4 measures what skipping them gains (task 001 step 2, 2026-10-12).
+- **A block is held as symbols, then coded whole.** A block ends at 16,384 symbols, at
+  a slide that would drop its first bytes, and at a flush or finish. It is then written
+  with the fixed Huffman tables or stored, whichever takes fewer bits, as zlib chooses,
+  so incompressible input grows by about 5 bytes every 16 KB. Holding the block lets
+  its header carry the final-block bit, and gives step 3 the symbol counts it builds
+  dynamic tables from (task 001 step 2, 2026-10-12).
+- **Levels.** 0 stores, and 1 to 9 compress; the default is 6, as zlib's. Every level
+  from 1 matches the same way until step 4 adds a lazy one. `compress` runs the
+  streaming encoder, so a stream that isn't flushed gives the same bytes either way
+  (task 001 step 2, 2026-10-12).
 
 ## Proposed
 

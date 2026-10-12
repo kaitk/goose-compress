@@ -1,6 +1,6 @@
 # 001: gzip and zlib
 
-Status: in-progress (step 1 done, 2026-10-12)
+Status: in-progress (steps 1 and 2 done, 2026-10-12)
 
 A DEFLATE encoder in Goose with the gzip and zlib wrappers, for goose-http's task 022
 (its subtask 02, which points here). Each step gives output `gzip -d` accepts, so
@@ -33,7 +33,7 @@ nearest levels, taking from their designs what Goose can express (requested
       JSON, random bytes, inputs of 65,535 and 65,536 bytes and across other block
       boundaries, and many flushes (`scripts/roundtrip.py`)
 - [x] A fuzz test of random inputs and flush points against Python's `zlib`
-- [ ] Step 2: LZ77 with fixed Huffman tables, passing the same tests
+- [x] Step 2: LZ77 with fixed Huffman tables, passing the same tests
 - [ ] Step 3: dynamic Huffman tables, passing the same tests
 - [ ] Step 4: rate and ratio per level against libdeflate and zlib-ng at their nearest
       levels, on the same inputs and machine, with how they were measured, in
@@ -47,3 +47,19 @@ package compresses 342-345 MB/s against libdeflate's 21-32 GB/s and zlib-ng's 7.
 GB/s (`docs/results.md`). The gap is CRC-32: one table lookup a byte, against the
 libraries' carryless-multiply CRC, which Goose can't express
 ([findings](../docs/goose-findings.md#goose-has-no-carryless-multiply)).
+
+## Step 2
+
+Levels 1 to 9 find LZ77 matches with one probe of a 4-byte hash a position, greedily,
+up to 32,768 bytes back across writes and flushes. Each block of up to 16,384 symbols
+is coded with the fixed Huffman tables, or stored where that's shorter. A stream holds
+262,484 bytes. The decisions are in the
+[architecture doc](../docs/architecture/README.md). Level 0 stores as at step 1, but
+`compress` now runs the streaming encoder, so a one-shot input of a whole number of
+65,535-byte blocks ends with an empty final block, as a stream's always did.
+
+At level 1 the package compresses 65-159 MB/s on 7 Silesia files, 1.9 to 3.7 times
+slower than zlib-ng and libdeflate. Its output is smaller than zlib-ng's, which uses
+the same fixed tables, on six files of seven; libdeflate's is 13 to 32 percent
+smaller than the package's. At level 6 it does a level 1's work, so it loses every
+ratio (`docs/results.md`).

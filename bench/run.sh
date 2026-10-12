@@ -4,9 +4,8 @@
 # share of the input, and the median and best rate in MB/s of RUNS runs.
 # bench/build.sh builds what it runs.
 #
-# LEVELS (default "0"): the levels, the same number for each library; the
-# package stores at every level until step 2 of its first task. RUNS (default
-# 10). FILES (default: the Silesia files below) names files under
+# LEVELS (default "0"): the levels, the same number for each library. RUNS
+# (default 10). FILES (default: the Silesia files below) names files under
 # build/bench/corpus/, or paths.
 set -eu
 # awk prints decimal commas under some locales.

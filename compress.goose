@@ -1,9 +1,11 @@
 // The package's entry: gzip, zlib, and raw DEFLATE encoders, bytes in and bytes
-// out. The checksums are in checksum.goose.
+// out. The DEFLATE stream at levels 1 and up is in deflate.goose, the checksums
+// in checksum.goose.
 namespace compress;
 
 import std;
 import .checksum;
+import .deflate;
 
 // The container around the DEFLATE stream: gzip (RFC 1952), zlib (RFC 1950), or
 // none (RFC 1951 alone, HTTP's "deflate" being zlib's).
@@ -11,39 +13,41 @@ let GZIP = 0;
 let ZLIB = 1;
 let RAW = 2;
 
+// Level 0 stores; 1 to 9 compress. Every level from 1 matches the same way for
+// now.
+let DEFAULT_LEVEL = 6;
+
 // The most a stored block holds: its length is 16 bits (RFC 1951 §3.2.4).
 let STORED_MAX = 65535;
 
-// A stream being compressed. Input is held until a block fills, so the blocks a
-// stream gives don't depend on how its input was split across writes.
+// A stream being compressed. Its blocks depend only on its input and where it
+// was flushed, not on how the input was split across writes.
 struct Encoder {
     format: i64 = GZIP,
+    level: i64 = DEFAULT_LEVEL,
     started: bool = false,
     finished: bool = false,
     // CRC-32 for gzip, Adler-32 for zlib.
     check: u32 = 0,
     // The input's length modulo 2^32: gzip's ISIZE.
     size: u32 = 0,
-    pending: u8[..65535] = [],
+    // At level 0, z.win[..z.fill] holds the input not yet stored.
+    z: Lz,
 }
 
-fn encoder(format: i64 = GZIP) -> Encoder {
+fn encoder(format: i64 = GZIP, level: i64 = DEFAULT_LEVEL) -> Encoder {
     assert(format == GZIP || format == ZLIB || format == RAW);
-    return Encoder { format: format, check: if format == ZLIB { 1 } else { 0 }, .. };
+    assert(level >= 0 && level <= 9);
+    return Encoder { format: format, level: level,
+                     check: if format == ZLIB { 1 } else { 0 }, .. };
 }
 
 // Compresses `data` whole and appends the stream to `out`.
-fn compress(data: const u8[:], out: u8[>..]&, format: i64 = GZIP) {
-    var e = encoder(format);
-    absorb(e, data);
-    header(e, out);
-    var at = 0;
-    while data.len - at > STORED_MAX {
-        stored(out, data[at..at + STORED_MAX], false);
-        at += STORED_MAX;
-    }
-    stored(out, data[at..], true);
-    trailer(e, out);
+fn compress(data: const u8[:], out: u8[>..]&, format: i64 = GZIP,
+            level: i64 = DEFAULT_LEVEL) {
+    var e = encoder(format, level);
+    write(e, data, out);
+    finish(e, out);
 }
 
 // Compresses `data` into the stream, appending whole blocks to `out` and holding
@@ -52,20 +56,27 @@ fn write(e: Encoder&, data: const u8[:], out: u8[>..]&) {
     assert(!e.finished);
     absorb(e, data);
     header(e, out);
+    if e.level > 0 {
+        lz_write(e.z, data, out);
+        return;
+    }
+    let z .= e.z;
     var at = 0;
-    if e.pending.len > 0 {
-        let take = min(STORED_MAX - e.pending.len, data.len);
-        e.pending.append(data[..take]);
+    if z.fill > 0 {
+        let take = min(STORED_MAX - z.fill, data.len);
+        copy_into(z.win[z.fill..z.fill + take], data[..take]);
+        z.fill += take;
         at = take;
-        guard e.pending.len == STORED_MAX else { return; }
-        stored(out, e.pending, false);
-        e.pending.clear();
+        guard z.fill == STORED_MAX else { return; }
+        stored(out, z.win[..STORED_MAX], false);
+        z.fill = 0;
     }
     while data.len - at >= STORED_MAX {
         stored(out, data[at..at + STORED_MAX], false);
         at += STORED_MAX;
     }
-    e.pending.append(data[at..]);
+    copy_into(z.win[..data.len - at], data[at..]);
+    z.fill = data.len - at;
 }
 
 // Ends the output so far on a byte boundary, so a reader can decompress all the
@@ -74,9 +85,13 @@ fn write(e: Encoder&, data: const u8[:], out: u8[>..]&) {
 fn flush(e: Encoder&, out: u8[>..]&) {
     assert(!e.finished);
     header(e, out);
-    if e.pending.len > 0 {
-        stored(out, e.pending, false);
-        e.pending.clear();
+    if e.level > 0 {
+        lz_flush(e.z, out);
+        return;
+    }
+    if e.z.fill > 0 {
+        stored(out, e.z.win[..e.z.fill], false);
+        e.z.fill = 0;
     }
     stored(out, "", false);
 }
@@ -85,8 +100,12 @@ fn flush(e: Encoder&, out: u8[>..]&) {
 fn finish(e: Encoder&, out: u8[>..]&) {
     assert(!e.finished);
     header(e, out);
-    stored(out, e.pending, true);
-    e.pending.clear();
+    if e.level > 0 {
+        lz_finish(e.z, out);
+    } else {
+        stored(out, e.z.win[..e.z.fill], true);
+        e.z.fill = 0;
+    }
     trailer(e, out);
     e.finished = true;
 }
@@ -104,12 +123,16 @@ fn header(e: Encoder&, out: u8[>..]&) {
     guard !e.started else { return; }
     e.started = true;
     if e.format == GZIP {
-        // ID1, ID2, CM 8 (deflate), no flags, no time, XFL 0, OS 255 (unknown).
-        out.append([0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 255]);
+        // ID1, ID2, CM 8 (deflate), no flags, no time, XFL (2 for the
+        // strongest level, 4 for the fastest), OS 255 (unknown).
+        let xfl: u8 = if e.level == 9 { 2 } else if e.level == 1 { 4 } else { 0 };
+        out.append([0x1f, 0x8b, 8, 0, 0, 0, 0, 0, xfl, 255]);
     } else if e.format == ZLIB {
-        // CM 8, a 32 KB window; FLEVEL 0 (fastest), and the check bits that make
-        // the pair a multiple of 31.
-        out.append([0x78, 0x01]);
+        // CM 8, a 32 KB window; FLEVEL as zlib sets it for the level, and the
+        // check bits that make the pair a multiple of 31.
+        let flg: u8 = if e.level < 2 { 0x01 } else if e.level < 6 { 0x5e }
+                      else if e.level == 6 { 0x9c } else { 0xda };
+        out.append([0x78, flg]);
     }
 }
 
@@ -122,12 +145,16 @@ fn trailer(e: Encoder&, out: u8[>..]&) {
     }
 }
 
-// A stored block: a 3-bit header padded to the byte, then LEN, its complement
-// NLEN, and the bytes. Every block this encoder writes ends on a byte boundary,
-// so each header starts one.
+// A stored block at level 0: a 3-bit header padded to the byte, then the body.
+// Every block at level 0 ends on a byte boundary, so each header starts one.
 fn stored(out: u8[>..]&, data: const u8[:], last: bool) {
-    assert(data.len <= STORED_MAX);
     out.push(if last { 1 } else { 0 });
+    stored_body(out, data);
+}
+
+// LEN, its complement NLEN, and the bytes.
+fn stored_body(out: u8[>..]&, data: const u8[:]) {
+    assert(data.len <= STORED_MAX);
     let n = data.len as! u16;
     put_le16(out, n);
     put_le16(out, ~n);

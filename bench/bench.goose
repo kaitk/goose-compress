@@ -3,8 +3,7 @@
 //
 //   bench LEVEL FILE RUNS
 //
-// Prints the same line as bench/ref.c, under the name goose. Every level stores
-// until the encoder has another.
+// Prints the same line as bench/ref.c, under the name goose.
 import std;
 import os;
 import compress from "../";
@@ -14,7 +13,10 @@ fn main() {
     guard a.len == 4 else { write_stderr("usage: bench LEVEL FILE RUNS\n"); exit(2); }
     let level, lok = parse_int(a[1]);
     let runs, rok = parse_int(a[3]);
-    guard lok && rok && runs > 0 else { write_stderr("bad arguments\n"); exit(2); }
+    guard lok && rok && level >= 0 && level <= 9 && runs > 0 else {
+        write_stderr("bad arguments\n");
+        exit(2);
+    }
     var data: u8[>..] = [];
     guard read_file(a[2], data) else { write_stderr("can't read input\n"); exit(1); }
     var out: u8[>..] = [];
@@ -22,7 +24,7 @@ fn main() {
     for i in runs {
         out.clear();
         let t = clock_ns();
-        compress::compress(data, out);
+        compress::compress(data, out, compress::GZIP, level);
         let ns = clock_ns() - t;
         rates.push(data.len / (ns * 1e-9) / 1e6);
     }

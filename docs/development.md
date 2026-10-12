@@ -58,30 +58,37 @@ program that imports both builds with one compiler.
 1. `goose check` of each root file under `test/` and `bench/`.
 2. `scripts/test-unit.sh`: each `test/test_*.goose` through TinyCC, in the compiler's
    process. `test/test_compress.goose` checks the checksums against known values, the
-   exact bytes of small streams, and that a stream's bytes don't depend on how its
-   input was split across writes.
+   exact bytes of small streams at level 0 and of small fixed-Huffman streams at level
+   1, flushes, matches at distance 32,768, and that a stream's bytes don't depend on
+   how its input was split across writes, at levels 0, 1, and 6.
 3. `goose build` of `test/encode.goose` into `build/encode`, a command that compresses
-   a file one-shot or by a plan of writes and flushes.
+   a file at a level, one-shot or by a plan of writes and flushes.
 4. `scripts/roundtrip.py`: `build/encode` on each input in gzip, zlib, and raw DEFLATE,
-   one-shot and streamed. Each output must decompress to its input through Python's
-   `zlib`, and gzip output through `gzip -dc` too. At each flush, the output so far must
-   end in `00 00 ff ff` and decompress to exactly the input written so far. The inputs
-   are empty, one byte, text, JSON, random bytes, and random inputs of 65,534 to 131,071
-   bytes around the stored blocks' 65,535-byte limit. A fuzz run of 200 random inputs
-   and plans follows, with seed 0; `--fuzz N --seed S` changes them.
+   at levels 0, 1, 6, and 9, one-shot and streamed. Each output must decompress to its
+   input through Python's `zlib`, and gzip output through `gzip -dc` too. At each
+   flush, the output so far must end in `00 00 ff ff` and decompress to exactly the
+   input written so far. The inputs are empty, one byte, text, JSON, random bytes,
+   random inputs of 65,534 to 131,071 bytes around the stored blocks' 65,535-byte
+   limit, long runs and repeated blocks, bytes that repeat at distances 32,767, 32,768,
+   and 32,769, and random bytes with runs copied from up to 40 KB back. The plans write
+   in 257-byte pieces, which end inside matches, and flush every 1,000 and every 32,769
+   bytes, so matches run across writes and flushes. One-shot at level 1 and up, inputs
+   that repeat must compress below a limit set for each. A fuzz run of 200 random
+   inputs, levels, and plans follows, with seed 0; `--levels`, `--fuzz N`, and
+   `--seed S` change them.
 
 ```sh
 GOOSE=../goose/build-macos/goose scripts/test.sh
 ```
 
-It took about 4 s on the M1 Pro (2026-10-12). A program run through TinyCC compiles at
+It took about 14 s on the M1 Pro (2026-10-12). A program run through TinyCC compiles at
 `-O1` without a C compiler, so the unit tests start fast; `encode` is built with
-`goose build` because `roundtrip.py` runs it 410 times.
+`goose build` because `roundtrip.py` runs it 1,928 times.
 
 To try one stream by hand:
 
 ```sh
-build/encode gzip in.txt out.gz 100,f,5,f   # 100 bytes, flush, 5 bytes, flush, the rest
+build/encode gzip 6 in.txt out.gz 100,f,5,f   # level 6: 100 bytes, flush, 5, flush, the rest
 gzip -dc out.gz
 ```
 
@@ -108,8 +115,8 @@ bench/run.sh                                # level 0, 10 runs, 7 Silesia files
 LEVELS="1 6 9" RUNS=5 FILES=dickens bench/run.sh
 ```
 
-The level is passed to each library as it is; the package stores at every level until
-task 001's step 2. Record results in `docs/results.md` with what `AGENTS.md` asks for.
+The level is passed to each library as it is. Record results in `docs/results.md` with
+what `AGENTS.md` asks for.
 
 ## Traps
 
