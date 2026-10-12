@@ -69,8 +69,13 @@ until the task named beside it confirms or replaces it.
   far before extending it.** Most candidates fail there. At level 1, comparing the 4
   bytes at once made the encoder 16 to 27 percent faster. Extending 8 bytes at a time
   was no faster at any level, because matches are short, and std's `ctz` is a loop
-  ([findings](../goose-findings.md#ctz-and-popcount-loop-over-the-bits)) (task 001 step
+  ([findings](../goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)) (task 001 step
   4, 2026-10-12).
+- **Length and distance codes, and a distance's logarithm for lazy matching, come from
+  tables built once,** not from std's `clz`. On the M1 Pro the tables were within the
+  noise of `clz`, which Apple clang makes one instruction; on the Ryzen, where clang
+  leaves `clz` a loop, they made level 1 1.2 to 2.1 times faster and levels 6 and 9 9 to
+  27 percent faster (task 003, 2026-10-12).
 - **A block is held as symbols, then coded whole.** A block ends at 16,384 symbols, at
   a slide that would drop its first bytes, and at a flush or finish. Holding the block
   lets its header carry the final-block bit and gives the symbol counts its dynamic

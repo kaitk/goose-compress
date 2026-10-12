@@ -195,7 +195,21 @@ fn match_chains(z: Lz&, out: u8[>..]&, end: i64) {
 // literals on it: by libdeflate's measure, 4 for each byte longer and 1 for
 // each power of two nearer, past the threshold.
 fn better(len: i64, dist: i64, cur: i64, cur_dist: i64, threshold: i64) -> bool {
-    return len >= cur && 4 * (len - cur) + clz(dist as! u64) - clz(cur_dist as! u64) > threshold;
+    return len >= cur && 4 * (len - cur) + log2(cur_dist) - log2(dist) > threshold;
+}
+
+// The base-2 logarithm of a distance, rounded down, from a table: std's clz is
+// a loop on x86-64 (see LEN_TAB).
+fn log2(d: i64) -> i64 {
+    return if d >= 256 { 8 + LOG2[(d >> 8) & 255] } else { LOG2[d & 255] };
+}
+
+let LOG2 = log2_tab();
+
+fn log2_tab() -> i64[256] {
+    var t: i64[256] = [0; 256];
+    for i in 2..256 { t[i] = t[i >> 1] + 1; }
+    return t;
 }
 
 // Inserts position i into its hash chain, and returns the distance to the
@@ -512,21 +526,61 @@ fn put_header(z: Lz&, out: u8[>..]&, hd: Header&) {
 // The length symbol (257-285) for a match length minus 3, with its extra bits'
 // count and value (RFC 1951 §3.2.5).
 fn len_code(x: u32) -> i64, i64, u32 {
-    if x == 255 { return 285, 0, 0; }
-    if x < 8 { return 257 + x as i64, 0, 0; }
-    let n = 63 - clz(x);
-    let extra = n - 2;
-    return 257 + 4 * (n - 1) + ((x >> extra) & 3), extra, x & ((1 << extra) - 1);
+    let e = LEN_TAB[x];
+    return e & 0x1FF, (e >> 9) & 15, x - (e >> 13);
 }
 
 // The distance code (0-29) for a distance, with its extra bits' count and
 // value.
 fn dist_code(d: u32) -> i64, i64, u32 {
     let x = d - 1;
-    if x < 4 { return x, 0, 0; }
-    let n = 63 - clz(x);
-    let extra = n - 1;
-    return 2 * n + ((x >> extra) & 1), extra, x & ((1 << extra) - 1);
+    let e = if x < 256 { DIST_TAB[x & 255] } else { DIST_TAB[256 + ((x >> 7) & 255)] };
+    return e & 31, (e >> 5) & 15, x - (e >> 9);
+}
+
+// len_code and dist_code as tables, since std's clz is a loop that clang turns
+// into an instruction for arm64 but not for x86-64
+// ([findings](docs/goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)).
+// An entry holds the code, the extra bits' count from bit 9 (bit 5 for a
+// distance), and the value the extra bits count from, from bit 13 (bit 9).
+// Distances past 256 share a code 128 at a time, so they're looked up by d >> 7.
+let LEN_TAB = len_tab();
+let DIST_TAB = dist_tab();
+
+fn len_tab() -> u32[256] {
+    var t: u32[256] = [0; 256];
+    for i in 256 {
+        let x = i as! u32;
+        var code = 257 + i;
+        var extra = 0;
+        if x == 255 {
+            code = 285;
+        } else if x >= 8 {
+            let n = 63 - clz(x);
+            extra = n - 2;
+            code = 257 + 4 * (n - 1) + ((x >> extra) & 3);
+        }
+        t[i] = code as! u32 | (extra as! u32) << 9 | (x >> extra << extra) << 13;
+    }
+    return t;
+}
+
+fn dist_tab() -> u32[512] {
+    var t: u32[512] = [0; 512];
+    for i in 512 {
+        let x = (if i < 256 { i } else { (i - 256) << 7 }) as! u32;
+        var code = x as i64;
+        var extra = 0;
+        if x >= 4 {
+            let n = 63 - clz(x);
+            extra = n - 1;
+            code = 2 * n + ((x >> extra) & 1);
+        }
+        if x < WSIZE {
+            t[i] = code as! u32 | (extra as! u32) << 5 | (x >> extra << extra) << 9;
+        }
+    }
+    return t;
 }
 
 // The fixed codes (RFC 1951 §3.2.6), which are canonical codes of these

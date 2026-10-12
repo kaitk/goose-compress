@@ -195,6 +195,10 @@ build/bench/bench 6 build/bench/corpus/mozilla 20 & sleep 1; sample bench 4 -fil
 - Shrinking a `u8[>..]&` parameter, even after growing it in the same call, makes the
   function one that shrinks it, and a caller holding a slice of that array can no
   longer call it (spec §5.1). The package's functions only append to `out`.
-- std's `ctz` and `popcount` are loops; `clz` compiles to an instruction
-  ([findings](goose-findings.md#ctz-and-popcount-loop-over-the-bits)).
+- std's `clz`, `ctz`, and `popcount` are loops. Apple clang turns `clz` into an
+  instruction on arm64, and clang on x86-64 doesn't, so a `clz` that costs nothing on
+  the M1 Pro can halve a rate on the Ryzen
+  ([findings](goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)).
+- A hot path that is fast on one machine can be slow on the other: measure a change on
+  both, or say which one it was measured on.
 - Under zsh, `set -- $v` doesn't split `$v` into words; run such loops with `sh`.

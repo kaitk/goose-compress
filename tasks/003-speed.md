@@ -38,7 +38,10 @@ In rough order of expected payoff:
    Look for a way within the language that the findings entry doesn't rule out
    already; if there is none, leave it to the maintainer.
 5. Adler-32 for zlib output: done on the Windows machine, as a `simd fn` summing 32
-   lanes (540ae3c). Its measurement is that machine's to record.
+   lanes (540ae3c), and measured there (`docs/results.md`).
+6. std's `clz` on x86-64, where clang leaves it a loop: done on the Windows machine.
+   The length and distance codes and `better`'s logarithms come from tables, which
+   doubled level 1 there. Keep `clz`, `ctz`, and `popcount` out of hot paths.
 
 Bounds checks the hot paths keep at `c38dc0f` (`goose check --bce-lines
 bench/bench.goose`, 2026-10-12): the hash-table index in `match_fast`, `insert`, and

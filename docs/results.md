@@ -5,6 +5,7 @@ starts with how the machine and its tools were set up; numbers from different ma
 aren't compared. How to run them is in [development.md](development.md#benchmark).
 
 - [Apple M1 Pro, macOS](#apple-m1-pro-macos)
+- [AMD Ryzen 7 5800X3D, Windows](#amd-ryzen-7-5800x3d-windows)
 
 ## Apple M1 Pro, macOS
 
@@ -271,7 +272,7 @@ Slice-by-16 also took level 1 from 87 to 110 MB/s on `dickens` and from 134 to 1
 `xml`. Comparing the 4 hashed bytes first turns away a candidate from an empty bucket
 whose first 3 bytes happen to match the stream's start, so it gave 1 to 2 bytes less
 output on `dickens` and `mozilla`. The 8-byte compare lost with std's `ctz` because
-`ctz` is a loop ([findings](goose-findings.md#ctz-and-popcount-loop-over-the-bits)),
+`ctz` is a loop ([findings](goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)),
 and without it moved rates by -3 to +5 percent, about the noise. Matches are short (at
 level 6, the candidates extended on `dickens` match 5.7 bytes on average), and at
 levels 6 and 9 the time goes into walking the chains.
@@ -378,3 +379,96 @@ fell where the loop's exits land, against no instruction above 7 percent in libd
 The `u16` table gave 488 to 595 bytes less output, but its offsets wrap every 64 KB, so
 stale entries pass the distance test and cost a full probe, where the `u32` table turns
 them away before any compare.
+
+## AMD Ryzen 7 5800X3D, Windows
+
+- Desktop on an MSI `MS-7A34` board, AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,
+  AVX2 and no AVX-512), 32 GB, Windows 11 Pro 10.0.26200.
+- Goose `c38dc0f`, `goose build` defaults: `clang-cl` 22.1.3 at `/O2`, from Visual
+  Studio Build Tools 2026 (18). `simd fn`s get an AVX2 version.
+- libdeflate v1.26 and zlib-ng 2.3.3, CMake `Release` builds with Ninja and clang
+  22.1.3 and their default options, which pick each CPU's fastest code at run time;
+  `bench/ref.c` at `-O2`, same compiler.
+- Run from Git Bash. Docker Desktop, a WSL distribution, and desktop apps ran beside
+  the benchmarks, at about 13 percent CPU load before they started, and no other
+  benchmark.
+
+### Levels 0, 1, 6, and 9 at `540ae3c`
+
+2026-10-12, task 003, package at `540ae3c`: task 001's encoder with Adler-32 as a
+`simd fn`. `LEVELS="0 1 6 9" bench/run.sh`, then `FORMAT=zlib bench/run.sh`: one-shot,
+the whole file in memory, 10 runs per cell. MB/s is the median of the 10 runs. The
+ratios are the M1 Pro's at step 4, to the byte.
+
+| File | MB | Level 0 goose | zlib-ng | libdeflate | Level 0 zlib goose | zlib-ng | libdeflate |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 10.2 | 2,672.8 | 17,369.5 | 19,158.7 | 13,195.8 | 43,335.2 | 24,703.0 |
+| webster | 41.5 | 2,656.0 | 15,274.7 | 15,980.1 | 13,941.8 | 24,123.5 | 17,149.4 |
+| xml | 5.3 | 2,514.1 | 17,209.5 | 16,693.6 | 9,876.7 | 42,355.6 | 21,441.2 |
+| nci | 33.6 | 2,713.3 | 16,193.7 | 16,137.7 | 14,335.4 | 28,439.9 | 20,152.2 |
+| mozilla | 51.2 | 2,640.4 | 15,134.7 | 13,620.3 | 13,134.8 | 20,419.6 | 16,175.7 |
+| samba | 21.6 | 2,769.6 | 17,064.0 | 19,690.5 | 15,376.0 | 37,773.4 | 24,889.3 |
+| x-ray | 8.5 | 2,629.8 | 17,266.2 | 18,882.0 | 12,111.2 | 43,060.2 | 24,115.7 |
+
+Level 0 is a copy and the checksum. With CRC-32 (gzip), Goose is 5.2 to 7.2 times
+slower than both libraries, which use the CPU's carryless multiply. With Adler-32
+(zlib), it's 1.6 to 4.3 times slower than zlib-ng and 1.2 to 2.2 times slower than
+libdeflate.
+
+| File | Level 1 goose | zlib-ng | libdeflate | Level 6 goose | zlib-ng | libdeflate | Level 9 goose | zlib-ng | libdeflate |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 84.6 | 284.7 | 259.0 | 36.3 | 66.6 | 74.0 | 18.9 | 27.5 | 32.5 |
+| webster | 98.5 | 338.8 | 288.2 | 49.6 | 82.6 | 104.0 | 22.4 | 43.0 | 38.6 |
+| xml | 143.7 | 684.6 | 505.3 | 91.1 | 163.3 | 189.2 | 35.3 | 79.7 | 64.0 |
+| nci | 197.8 | 876.7 | 650.4 | 97.6 | 210.7 | 235.7 | 25.8 | 71.1 | 63.1 |
+| mozilla | 115.7 | 313.5 | 268.6 | 54.0 | 92.4 | 117.3 | 16.9 | 27.7 | 31.5 |
+| samba | 136.7 | 440.5 | 363.6 | 66.5 | 118.5 | 137.4 | 26.1 | 50.8 | 47.1 |
+| x-ray | 103.3 | 158.0 | 159.7 | 47.7 | 74.7 | 120.7 | 43.2 | 43.4 | 101.9 |
+
+Goose loses every rate. At level 1 it's 1.5 to 4.8 times slower than zlib-ng, and 1.5
+to 3.5 times slower than libdeflate; on the M1 Pro it was 1.1 to 1.7 times slower than
+either. At level 6 it's 1.6 to 2.2 times slower than zlib-ng and 2.0 to 2.5 times
+slower than libdeflate; at level 9, 1.0 (`x-ray`) to 2.8 and 1.7 to 2.5 times. Both
+libraries ran faster here than on the M1 Pro, and the package's level 1 at half the
+rate: `bench` built in WSL on the same CPU with `--cc clang` ran level 1 on `dickens`
+at 83.4 MB/s, so the cause is the x86-64 code, not Windows. `perf` there put 66 percent
+of level 1's time in `end_block`, in a loop that shifts one bit an iteration: std's
+`clz`, which clang turns into one instruction on arm64 but not on x86-64
+([findings](goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)).
+
+### Task 003: each change, measured on its own
+
+2026-10-12, task 003, Goose `c38dc0f`, same machine, compilers, and libraries. Each
+change was built with `goose build` into a binary of its own and run against the build
+before it as `bench LEVEL FILE RUNS FORMAT`, one-shot, in 3 alternating rounds; a cell
+is the best of the 3 rounds' medians, in MB/s. Where a change kept the bytes, only
+rates are shown.
+
+Adler-32, as level 0 zlib output (a copy and the checksum), `RUNS` 10, against both
+libraries in the same rounds. The lanes sum each byte into one of 32 lanes and fold
+the lanes once a run of 5,552 bytes:
+
+| Build | dickens | mozilla | x-ray | xml |
+|---|---:|---:|---:|---:|
+| A byte at a time | 3,667.8 | 3,691.1 | 3,574.4 | 3,361.0 |
+| 32 lanes | 7,787.6 | 8,146.1 | 7,516.0 | 6,546.6 |
+| 32 lanes, `simd fn` (AVX2) | 13,377.7 | 13,238.3 | 12,322.6 | 10,121.7 |
+| zlib-ng | 43,464.6 | 24,438.4 | 42,951.0 | 42,830.8 |
+| libdeflate | 25,329.1 | 17,637.9 | 24,344.3 | 21,978.9 |
+
+Kept as the `simd fn` (`540ae3c`): 3.0 to 3.6 times the byte-at-a-time rate. The lanes
+alone doubled it, by letting clang vectorize at SSE2; AVX2 gave another 1.5 to 1.7
+times.
+
+The length and distance codes, and the logarithms `better` compares, from tables
+instead of std's `clz`, against `b44ed4f`, gzip, `RUNS` 5:
+
+| Level | dickens | mozilla | x-ray | xml |
+|---:|---|---|---|---|
+| 1 | 86.9 → 177.6 | 118.2 → 193.9 | 105.2 → 130.8 | 147.9 → 312.1 |
+| 6 | 37.8 → 47.9 | 56.9 → 70.5 | 51.1 → 58.5 | 94.3 → 120.1 |
+| 9 | 19.3 → 22.0 | 17.2 → 18.8 | 52.9 → 61.3 | 36.5 → 40.2 |
+
+Kept: 1.2 to 2.1 times faster at level 1, 14 to 27 percent at level 6, and 9 to 16
+percent at level 9, with the same bytes. On the M1 Pro the code tables were within the
+noise, at -1.7 to +3.1 percent (step 4).

@@ -93,17 +93,23 @@ the block), by `sample` (task 001 step 4).
 Workaround: none in the package; every stream pays it once. A caller that keeps an
 encoder per connection builds it once per stream, not per write.
 
-## `ctz` and `popcount` loop over the bits
+## `clz`, `ctz`, and `popcount` loop over the bits
 
-Found on `5c83a5a`, task 001. Status: open
+Found on `5c83a5a`, task 001; `clz` on x86-64 on `c38dc0f`, task 003. Status: open
 
 std's `clz`, `ctz`, and `popcount` are Goose loops, one iteration a bit (one a set
 bit for `popcount`). Apple clang 21 turns `clz`'s loop into the `clz` instruction,
 but not the other two: `ctz` and `popcount` run as loops. Expected: one instruction
-each, as C's `__builtin_ctzll` and `__builtin_popcountll` give. The program below
-takes 0.9 s on an M1 Pro, 9 ns a call at 21 trailing zeros, and its `main` has no
-`rbit` or `clz`. With `popcount` in place of `ctz` it takes 0.63 s; with `clz`,
-0.02 s.
+each, as C's `__builtin_clzll`, `__builtin_ctzll`, and `__builtin_popcountll` give.
+The program below takes 0.9 s on an M1 Pro, 9 ns a call at 21 trailing zeros, and its
+`main` has no `rbit` or `clz`. With `popcount` in place of `ctz` it takes 0.63 s; with
+`clz`, 0.02 s.
+
+On x86-64, clang 22.1.3 leaves `clz`'s loop a loop too, under `goose build` on Windows
+(`clang-cl /O2`) and with `--cc clang` on Linux: with `clz` in place of `ctz`, the
+program takes 0.58 s on a Ryzen 7 5800X3D. The baseline x86-64 target has no `lzcnt`,
+but `bsr` would do. `len_code` and `dist_code` used `clz` on each match, twice a
+match, and level 1 ran at half the M1 Pro's rate until tables replaced them (task 003).
 
     import std;
     import os;
@@ -121,6 +127,7 @@ takes 0.9 s on an M1 Pro, 9 ns a call at 21 trailing zeros, and its `main` has n
 An 8-byte match compare that found the first differing byte with `ctz` made level 1
 30-40 percent slower than comparing a byte at a time (task 001 step 4).
 
-Workaround: no `ctz` or `popcount` in a hot path. A de Bruijn multiply and a 64-entry
-table was still 3-12 percent slower at level 1 than shifting the xor of the two
-words a byte at a time.
+Workaround: no `clz`, `ctz`, or `popcount` in a hot path. A de Bruijn multiply and a
+64-entry table was still 3-12 percent slower at level 1 than shifting the xor of the
+two words a byte at a time. The length and distance codes and a distance's logarithm
+come from tables built once.
