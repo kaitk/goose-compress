@@ -89,20 +89,22 @@ fn lz_match(z: Lz&, out: u8[>..]&, flushing: bool) {
         var len = 0;
         var dist = 0;
         if p + 4 <= z.fill {
-            let h = hash4(z.win, p);
+            let v = load32(z.win, p);
+            let h = hash4(v);
             let cand = z.head[h];
             let here = z.base + p as! u32;
             z.head[h] = here;
             let d: i64 = here - cand;
-            if d >= 1 && d <= WSIZE && d <= p {
-                len = match_len(z.win, p - d, p, min(MAX_MATCH, z.fill - p));
+            // The 4 bytes hashed, compared at once, turn away most candidates.
+            if d >= 1 && d <= WSIZE && d <= p && load32(z.win, p - d) == v {
+                len = 4 + match_len(z.win, p - d + 4, p + 4, min(MAX_MATCH, z.fill - p) - 4);
                 dist = d;
             }
         }
         if len >= MIN_MATCH {
             add_sym(z, out, ((dist as! u32) << 8) | (len - MIN_MATCH) as! u32, len);
             for i in p + 1..min(p + len, z.fill - 3) {
-                z.head[hash4(z.win, i)] = z.base + i as! u32;
+                z.head[hash4(load32(z.win, i))] = z.base + i as! u32;
             }
         } else {
             add_sym(z, out, z.win[p], 1);
@@ -131,10 +133,13 @@ fn slide(z: Lz&, out: u8[>..]&) {
     z.base += WSIZE;
 }
 
-fn hash4(win: const u8[:], i: i64) -> i64 {
-    let v = win[i] | (win[i + 1] as u32) << 8 | (win[i + 2] as u32) << 16 |
-            (win[i + 3] as u32) << 24;
+fn hash4(v: u32) -> i64 {
     return (v * 0x9E3779B1) >> (32 - HASH_BITS);
+}
+
+fn load32(s: const u8[:], i: i64) -> u32 {
+    let c = s[i..i + 4];
+    return c[0] | (c[1] as u32) << 8 | (c[2] as u32) << 16 | (c[3] as u32) << 24;
 }
 
 fn match_len(win: const u8[:], a: i64, b: i64, most: i64) -> i64 {
