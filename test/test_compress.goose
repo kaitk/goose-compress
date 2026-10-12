@@ -1,7 +1,8 @@
 // Unit tests for the checksums and the encoder: known checksum values, the
-// Huffman code builder, the exact bytes of small streams at level 0 and of
-// small fixed and dynamic Huffman streams at level 1, and that a stream's
-// bytes don't depend on how its input was split across writes. scripts/test-unit.sh runs them through TinyCC;
+// Huffman code builder, the exact bytes of small streams at level 0, of small
+// fixed and dynamic Huffman streams at level 1, and of what the levels match
+// differently, and that a stream's bytes don't depend on how its input was
+// split across writes. scripts/test-unit.sh runs them through TinyCC;
 // scripts/roundtrip.py checks the output against gzip and Python's zlib.
 import std;
 import compress from "../";
@@ -92,8 +93,36 @@ fn test_fixed() {
     // Seven literals, then a match of 12 at distance 7.
     assert(same(raw("hello, hello, hello", 1),
                 [0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0xd7, 0x51, 0x40, 0xa6, 0x00]));
-    // Every level from 1 matches the same way for now.
     assert(raw("hello, hello, hello", 9) == raw("hello, hello, hello", 1));
+}
+
+// What the levels do differently, in fixed-Huffman streams Python's zlib
+// decompresses to their input.
+fn test_levels() {
+    // Level 1 probes the hash bucket's newest entry: the last "abcdefgh" is a
+    // match of 4 at distance 9 and one of 4 at 18. Level 2 follows the chain
+    // to a match of 8 at 18.
+    let chain = "abcdefgh1abcdXYZW2abcdefgh";
+    assert(same(raw(chain, 1), [
+        0x4b, 0x4c, 0x4a, 0x4e, 0x49, 0x4d, 0x4b, 0xcf, 0x30, 0x04, 0x31, 0x22, 0x22,
+        0xa3, 0xc2, 0x8d, 0x40, 0x0c, 0x90, 0x08, 0x00]));
+    let deep = [
+        0x4b, 0x4c, 0x4a, 0x4e, 0x49, 0x4d, 0x4b, 0xcf, 0x30, 0x04, 0x31, 0x22, 0x22,
+        0xa3, 0xc2, 0x8d, 0x60, 0x22, 0x00];
+    for level in 2..10 { assert(same(raw(chain, level), deep)); }
+
+    // At the last "abcdefgh", greedy levels take "abcd" at distance 13, then
+    // "efgh" at 9. From level 5, a match of 7 one byte on is better: a
+    // literal "a", then "bcdefgh" at 9.
+    let lazy = "abcdXbcdefghYabcdefgh";
+    let greedy = [
+        0x4b, 0x4c, 0x4a, 0x4e, 0x89, 0x48, 0x4a, 0x4e, 0x49, 0x4d, 0x4b, 0xcf, 0x88,
+        0x04, 0x71, 0x40, 0x0c, 0x00];
+    let lazier = [
+        0x4b, 0x4c, 0x4a, 0x4e, 0x89, 0x48, 0x4a, 0x4e, 0x49, 0x4d, 0x4b, 0xcf, 0x88,
+        0x4c, 0x84, 0x32, 0x00];
+    for level in 1..5 { assert(same(raw(lazy, level), greedy)); }
+    for level in 5..10 { assert(same(raw(lazy, level), lazier)); }
 }
 
 // The Kraft sum of h's lengths in units of 2^-15, which is 2^15 for a
@@ -230,7 +259,7 @@ fn test_splits() {
         data.push(r.rand_int(256) as! u8);
     }
     let far = far_repeats();
-    for level in [0, 1, 6] {
+    for level in [0, 1, 2, 6, 9] {
         for input in [data[..], far[..]] {
             var whole: u8[>..] = [];
             compress::compress(input, whole, compress::GZIP, level);
@@ -307,6 +336,7 @@ fn main() {
     test_one_byte();
     test_headers();
     test_fixed();
+    test_levels();
     test_huffman();
     test_dynamic();
     test_stored_fallback();

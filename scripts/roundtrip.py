@@ -10,7 +10,7 @@ up. An input whose optimal Huffman code needs more than 15 bits must get a
 dynamic code of exactly 15. Then a fuzz run of random inputs, levels, and
 plans, seeded for repeatability.
 
-    scripts/roundtrip.py [ENCODE] [--levels 0,1,6,9] [--fuzz N] [--seed S]
+    scripts/roundtrip.py [ENCODE] [--levels 0,1,2,6,9] [--fuzz N] [--seed S]
 """
 
 import argparse
@@ -27,6 +27,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WBITS = {"gzip": 31, "zlib": 15, "raw": -15}
 STORED_MAX = 65535
 WSIZE = 32768
+# The first level held to the tighter size limits: the default level.
+STRONG_LEVEL = 6
 
 
 def text(n):
@@ -107,12 +109,14 @@ def deep_code(r, n=16_000, rare=12, bulk=32):
 def inputs():
     """Yields each input's name, bytes, and the most its one-shot output may
     take at level 1 and up, as a share of the input: a few percent over what
-    the dynamic code reaches."""
+    level 1 reaches. Where the stronger levels do better, a pair: the limit
+    from level 1, then the one from STRONG_LEVEL, a few percent over what
+    level 6 reaches."""
     r = random.Random(3)
     yield "empty", b"", None
     yield "one byte", b"a", None
-    yield "text", text(100_000), 0.24
-    yield "json", json_doc(), 0.235
+    yield "text", text(100_000), (0.24, 0.19)
+    yield "json", json_doc(), (0.235, 0.205)
     # Stored where a code would grow it.
     yield "random", r.randbytes(300_000), 1.001
     for n in (STORED_MAX - 1, STORED_MAX, STORED_MAX + 1, 2 * STORED_MAX,
@@ -127,7 +131,7 @@ def inputs():
     yield "repeats at 32768", repeats_at(r, WSIZE, 4 * WSIZE), 0.27
     # Out of reach: nothing to match, so stored.
     yield "repeats at 32769", repeats_at(r, WSIZE + 1, 4 * WSIZE), 1.001
-    yield "copies within 40 KB", copies(r, 200_000), 0.39
+    yield "copies within 40 KB", copies(r, 200_000), (0.39, 0.375)
     yield "a code past 15 bits", deep_code(r), 0.66
 
 
@@ -161,6 +165,13 @@ def run(encode, fmt, level, data, plan, tmp):
         out = f.read()
     flushes = [tuple(map(int, line.split())) for line in p.stdout.splitlines()]
     return out, dst, flushes
+
+
+def level_limit(limit, level):
+    """The limit inputs() gives for one level, or None."""
+    if isinstance(limit, tuple):
+        return limit[1] if level >= STRONG_LEVEL else limit[0]
+    return limit
 
 
 def check(encode, fmt, level, data, plan, tmp, limit=None):
@@ -282,7 +293,7 @@ def fuzz_plan(r, n):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("encode", nargs="?", default=os.path.join(ROOT, "build", "encode"))
-    ap.add_argument("--levels", default="0,1,6,9")
+    ap.add_argument("--levels", default="0,1,2,6,9")
     ap.add_argument("--fuzz", type=int, default=200)
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
@@ -295,7 +306,7 @@ def main():
                     for pname, plan in [("one-shot", None)] + list(plans(len(data))):
                         try:
                             check(args.encode, fmt, level, data, plan, tmp,
-                                  limit if plan is None else None)
+                                  level_limit(limit, level) if plan is None else None)
                         except Failure as e:
                             sys.exit(f"FAIL {name}, {fmt}, level {level}, {pname}: {e}")
                         cases += 1
