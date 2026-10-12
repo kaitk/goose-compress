@@ -471,6 +471,20 @@ Masking the symbol counter to `SYM_MAX` drops a bounds check that never fails, y
 level 1 9 to 14 percent slower; how clang compiled the loop around it wasn't examined.
 `match_len` keeps two slice checks a call in place of two index checks a byte.
 
+Level 1 with the hash table as 2^15 buckets of 2 entries, as libdeflate's level 1
+keeps them, in the same 256 KB: both candidates probed, the longer match taken. Against
+`865d359`, same method, ratio at MB/s:
+
+| Build | dickens | mozilla | x-ray | xml |
+|---|---|---|---|---|
+| 1 entry a bucket (`865d359`) | 0.4261 at 176.4 | 0.4003 at 195.7 | 0.7472 at 119.9 | 0.1997 at 317.2 |
+| 2 entries a bucket | 0.4139 at 148.6 | 0.3936 at 152.5 | 0.7442 at 84.9 | 0.1650 at 279.9 |
+| libdeflate 1 (step 4's run) | 0.414 at 227.9 | 0.394 at 244.2 | 0.743 at 144.0 | 0.166 at 469.5 |
+
+Two entries reach libdeflate's level-1 ratio, with 0.4 to 17.4 percent less output,
+and cost 12 to 29 percent of the rate. Not kept: this task is about rate, and level 2
+already gives more ratio for less rate (`dickens` 0.398 at 103 MB/s).
+
 ## AMD Ryzen 7 5800X3D, Windows
 
 - Desktop on an MSI `MS-7A34` board, AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,
