@@ -48,11 +48,30 @@ until the task named beside it confirms or replaces it.
   rewritten at each slide. Every position inside a match is hashed too: ratio first,
   and step 4 measures what skipping them gains (task 001 step 2, 2026-10-12).
 - **A block is held as symbols, then coded whole.** A block ends at 16,384 symbols, at
-  a slide that would drop its first bytes, and at a flush or finish. It is then written
-  with the fixed Huffman tables or stored, whichever takes fewer bits, as zlib chooses,
-  so incompressible input grows by about 5 bytes every 16 KB. Holding the block lets
-  its header carry the final-block bit, and gives step 3 the symbol counts it builds
-  dynamic tables from (task 001 step 2, 2026-10-12).
+  a slide that would drop its first bytes, and at a flush or finish. Holding the block
+  lets its header carry the final-block bit and gives the symbol counts its dynamic
+  code is built from (task 001 step 2, 2026-10-12).
+- **Each block takes the shortest of three forms, by exact bit count:** a dynamic
+  code built from its symbol counts, the fixed code, or stored. Ties go to stored,
+  then fixed, as zlib breaks them. Incompressible input grows by about 5 bytes every
+  16 KB (task 001 step 3, 2026-10-12).
+- **Blocks keep ending at 16,384 symbols and at a slide that would drop their first
+  bytes.** Both alternatives were measured at step 3 (`docs/results.md`, "Where blocks
+  end"). Running a block past the slide, as zlib does, and blocks of 32,768 or 65,536
+  symbols each gave more output on Silesia, up to 0.55 percent, and larger blocks hold
+  up to 196,608 bytes more a stream. A smaller block's code follows the data more
+  closely, and a dynamic header of a few dozen bytes is small beside 16,384 symbols
+  (task 001 step 3, 2026-10-12).
+- **Code lengths: optimal, then limited the way zlib limits them.** Moffat and
+  Katajainen's in-place algorithm gives optimal lengths from the frequencies sorted
+  ascending, in flat arrays with no heap or tree nodes. Where a length passes the limit
+  (15 bits, 7 for the code-length code), every length over it is cut to it, and leaves
+  move down one level at a time, zlib's way, until the Kraft sum is exactly 1; the
+  lengths then go out longest to the least frequent symbol. Package-merge would be
+  optimal at the limit too, but costs O(n·L) work and more state a block, and real
+  data seldom passes 15 bits, where the two agree. A code always has at least two
+  symbols, as zlib's does, because zlib's inflate rejects an incomplete code other than
+  a lone 1-bit one (task 001 step 3, 2026-10-12).
 - **Levels.** 0 stores, and 1 to 9 compress; the default is 6, as zlib's. Every level
   from 1 matches the same way until step 4 adds a lazy one. `compress` runs the
   streaming encoder, so a stream that isn't flushed gives the same bytes either way
@@ -62,3 +81,4 @@ until the task named beside it confirms or replaces it.
 
 - **DEFLATE in steps that each give valid output** (task 001): stored blocks, then LZ77
   with fixed Huffman tables, then dynamic tables, then speed. Each step keeps the API.
+  Steps 1 to 3 are done (2026-10-12).

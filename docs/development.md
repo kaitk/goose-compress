@@ -58,9 +58,12 @@ program that imports both builds with one compiler.
 1. `goose check` of each root file under `test/` and `bench/`.
 2. `scripts/test-unit.sh`: each `test/test_*.goose` through TinyCC, in the compiler's
    process. `test/test_compress.goose` checks the checksums against known values, the
-   exact bytes of small streams at level 0 and of small fixed-Huffman streams at level
-   1, flushes, matches at distance 32,768, and that a stream's bytes don't depend on
-   how its input was split across writes, at levels 0, 1, and 6.
+   Huffman code builder (RFC 1951's canonical-code example, optimal lengths, and
+   Fibonacci frequencies cut to 15 and 7 bits), the exact bytes of small streams at
+   level 0 and of small fixed and dynamic Huffman streams at level 1, flushes, matches
+   at distance 32,768, and that a stream's bytes don't depend on how its input was
+   split across writes, at levels 0, 1, and 6. Each exact-byte stream at level 1 was
+   checked by decompressing it with Python's `zlib`.
 3. `goose build` of `test/encode.goose` into `build/encode`, a command that compresses
    a file at a level, one-shot or by a plan of writes and flushes.
 4. `scripts/roundtrip.py`: `build/encode` on each input in gzip, zlib, and raw DEFLATE,
@@ -70,20 +73,23 @@ program that imports both builds with one compiler.
    input written so far. The inputs are empty, one byte, text, JSON, random bytes,
    random inputs of 65,534 to 131,071 bytes around the stored blocks' 65,535-byte
    limit, long runs and repeated blocks, bytes that repeat at distances 32,767, 32,768,
-   and 32,769, and random bytes with runs copied from up to 40 KB back. The plans write
-   in 257-byte pieces, which end inside matches, and flush every 1,000 and every 32,769
-   bytes, so matches run across writes and flushes. One-shot at level 1 and up, inputs
-   that repeat must compress below a limit set for each. A fuzz run of 200 random
-   inputs, levels, and plans follows, with seed 0; `--levels`, `--fuzz N`, and
+   and 32,769, random bytes with runs copied from up to 40 KB back, and 16,000 bytes
+   whose optimal Huffman code needs 17 bits. The plans write in 257-byte pieces, which
+   end inside matches, and flush every 1,000 and every 32,769 bytes, so matches run
+   across writes and flushes. One-shot at level 1 and up, inputs that repeat must
+   compress below a limit set for each, a few percent above what the dynamic code
+   reaches. The script then reads back the header of the 17-bit input's block: its
+   literal/length code must reach exactly 15 bits and be complete. A fuzz run of 200
+   random inputs, levels, and plans follows, with seed 0; `--levels`, `--fuzz N`, and
    `--seed S` change them.
 
 ```sh
 GOOSE=../goose/build-macos/goose scripts/test.sh
 ```
 
-It took about 14 s on the M1 Pro (2026-10-12). A program run through TinyCC compiles at
+It took about 19 s on the M1 Pro (2026-10-12). A program run through TinyCC compiles at
 `-O1` without a C compiler, so the unit tests start fast; `encode` is built with
-`goose build` because `roundtrip.py` runs it 1,928 times.
+`goose build` because `roundtrip.py` runs it 2,039 times.
 
 To try one stream by hand:
 
@@ -123,6 +129,11 @@ what `AGENTS.md` asks for.
 - `return` inside a block passed to a function, such as `each_split(s, ',') { ... }`,
   returns from the function that wrote the block, not from the block (tutorial §13).
   Use `if`/`else` inside the block to skip an item.
+- Globals initialize in import order, imported files first (spec §11.1). A file whose
+  globals call into another file's globals imports that file itself: `deflate.goose`
+  imports `huffman.goose`, because `FIXED_LIT` is built with `HUFF_MAX`. Importing
+  both from `compress.goose` alone fails with "may be used before it is assigned".
+- Integer literals are decimal or `0x` hex; there is no `0b`.
 - `match` takes integer constants only, so strings are compared with `if`/`else if`.
 - `args()`, `read_file`, and the other `os` functions need `import os;` even though
   their names are global.

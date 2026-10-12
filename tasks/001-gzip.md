@@ -1,6 +1,6 @@
 # 001: gzip and zlib
 
-Status: in-progress (steps 1 and 2 done, 2026-10-12)
+Status: in-progress (steps 1 to 3 done, 2026-10-12)
 
 A DEFLATE encoder in Goose with the gzip and zlib wrappers, for goose-http's task 022
 (its subtask 02, which points here). Each step gives output `gzip -d` accepts, so
@@ -34,7 +34,7 @@ nearest levels, taking from their designs what Goose can express (requested
       boundaries, and many flushes (`scripts/roundtrip.py`)
 - [x] A fuzz test of random inputs and flush points against Python's `zlib`
 - [x] Step 2: LZ77 with fixed Huffman tables, passing the same tests
-- [ ] Step 3: dynamic Huffman tables, passing the same tests
+- [x] Step 3: dynamic Huffman tables, passing the same tests
 - [ ] Step 4: rate and ratio per level against libdeflate and zlib-ng at their nearest
       levels, on the same inputs and machine, with how they were measured, in
       `docs/results.md`
@@ -63,3 +63,18 @@ slower than zlib-ng and libdeflate. Its output is smaller than zlib-ng's, which 
 the same fixed tables, on six files of seven; libdeflate's is 13 to 32 percent
 smaller than the package's. At level 6 it does a level 1's work, so it loses every
 ratio (`docs/results.md`).
+
+## Step 3
+
+Each block is coded with a dynamic code built from its symbol counts, the fixed code,
+or stored, whichever takes the fewest bits. Code lengths are optimal (Moffat and
+Katajainen) until one passes 15 bits, then limited as zlib limits them. Blocks still end
+at 16,384 symbols and at a slide that would drop their first bytes: running past the
+slide, and larger blocks, each gave more output on Silesia, so a stream still holds
+262,484 bytes. The decisions are in the [architecture doc](../docs/architecture/README.md).
+
+At level 1 the package's output is smaller than zlib-ng's on all seven Silesia files
+and 1.3 to 20 percent larger than libdeflate's (13 to 32 percent at step 2). It
+compresses 60-146 MB/s, 2.1 to 3.9 times slower than zlib-ng and 2.3 to 3.8 times
+slower than libdeflate. At level 6 it still does a level 1's work and loses every
+ratio, with 2 to 56 percent more output than zlib-ng (`docs/results.md`).

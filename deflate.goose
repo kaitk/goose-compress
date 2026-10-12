@@ -1,9 +1,10 @@
 // The DEFLATE stream at levels 1 and up: LZ77 with one hash probe per position,
-// and each block coded with the fixed Huffman tables (RFC 1951 §3.2.6) or
-// stored, whichever is shorter.
+// and each block coded with a dynamic Huffman code built from its symbols, with
+// the fixed code (RFC 1951 §3.2.6), or stored, whichever is shortest.
 namespace compress;
 
 import std;
+import .huffman;
 
 // Matches reach back at most WSIZE bytes and run at most MAX_MATCH.
 let WSIZE = 32768;
@@ -21,6 +22,11 @@ let HASH_SIZE = 1 << HASH_BITS;
 // A block ends when it holds this many symbols, as zlib's at its default
 // memory level.
 let SYM_MAX = 16384;
+// The literal/length symbols a block can use, the end of block included, and
+// the distance symbols.
+let LIT_CODES = 286;
+let DIST_CODES = 30;
+let END_BLOCK = 256;
 
 // The state of a stream at levels 1 and up, inside Encoder.
 struct Lz {
@@ -137,53 +143,178 @@ fn match_len(win: const u8[:], a: i64, b: i64, most: i64) -> i64 {
     return n;
 }
 
-// Writes the block's symbols with the fixed tables, or the block's bytes
-// stored, whichever takes fewer bits, and starts the next block.
+// Writes the open block in whichever of the three forms takes the fewest bits:
+// with a dynamic code, with the fixed code, or stored. Ties go to the stored
+// block, then to the fixed code, as zlib breaks them. Then starts the next
+// block.
 fn end_block(z: Lz&, out: u8[>..]&, last: bool) {
     let syms = z.syms[..z.nsym];
-    var fixed = 3 + 7;
+    var lfreq: u32[LIT_CODES] = [0; LIT_CODES];
+    var dfreq: u32[DIST_CODES] = [0; DIST_CODES];
+    // The lengths' and distances' extra bits, which every code spends alike.
+    var extra = 0;
     for s in syms {
         if s < 256 {
-            fixed += FIXED_LIT_LEN[s];
+            lfreq[s]++;
         } else {
             let lc, lbits, lextra = len_code(s & 0xff);
             let dc, dbits, dextra = dist_code(s >> 8);
-            fixed += FIXED_LIT_LEN[lc] + lbits + 5 + dbits;
+            lfreq[lc]++;
+            dfreq[dc]++;
+            extra += lbits + dbits;
         }
     }
+    lfreq[END_BLOCK] = 1;
+
+    var lit = Huff { .. };
+    var dist = Huff { .. };
+    huff_build(lfreq, lit, 15);
+    huff_build(dfreq, dist, 15);
+    var hd = Header { .. };
+    let dynamic = 3 + plan_header(lit, dist, hd) + code_bits(lfreq, lit) +
+                  code_bits(dfreq, dist) + extra;
+    let fixed = 3 + code_bits(lfreq, FIXED_LIT) + code_bits(dfreq, FIXED_DIST) + extra;
+
     let data = z.win[z.block_start..z.pos];
     let chunks = max(1, (data.len + STORED_MAX - 1) / STORED_MAX);
-    // Each stored block's header pads to the byte; only the first starts
-    // off one.
-    let stored_bits = 8 * data.len + chunks * (3 + 32) + (8 - (z.nbits + 3) % 8) % 8 +
-                      (chunks - 1) * 5;
-    if stored_bits < fixed {
+    // Each stored block's header pads to the byte; only the first starts off
+    // one.
+    let stored = 8 * data.len + chunks * (3 + 32) + (8 - (z.nbits + 3) % 8) % 8 +
+                 (chunks - 1) * 5;
+    let final_bit: u32 = if last { 1 } else { 0 };
+    if stored <= min(fixed, dynamic) {
         var at = 0;
         for c in chunks {
             let end = min(at + STORED_MAX, data.len);
-            put_bits(z, out, if last && c == chunks - 1 { 1 } else { 0 }, 3);
+            put_bits(z, out, if c == chunks - 1 { final_bit } else { 0 }, 3);
             align(z, out);
             stored_body(out, data[at..end]);
             at = end;
         }
+    } else if fixed <= dynamic {
+        put_bits(z, out, final_bit | 1 << 1, 3);
+        put_syms(z, out, syms, FIXED_LIT, FIXED_DIST);
     } else {
-        put_bits(z, out, if last { 3 } else { 2 }, 3);
-        for s in syms {
-            if s < 256 {
-                put_bits(z, out, FIXED_LIT_CODE[s], FIXED_LIT_LEN[s]);
-            } else {
-                let lc, lbits, lextra = len_code(s & 0xff);
-                put_bits(z, out, FIXED_LIT_CODE[lc], FIXED_LIT_LEN[lc]);
-                put_bits(z, out, lextra, lbits);
-                let dc, dbits, dextra = dist_code(s >> 8);
-                put_bits(z, out, reverse_bits(dc as! u32, 5), 5);
-                put_bits(z, out, dextra, dbits);
-            }
-        }
-        put_bits(z, out, FIXED_LIT_CODE[256], FIXED_LIT_LEN[256]);
+        put_bits(z, out, final_bit | 2 << 1, 3);
+        put_header(z, out, hd);
+        put_syms(z, out, syms, lit, dist);
     }
     z.nsym = 0;
     z.block_start = z.pos;
+}
+
+// The bits the symbols of freq take in code h.
+fn code_bits(freq: const u32[:], h: Huff&) -> i64 {
+    var n = 0;
+    for f, s in freq { n += f * h.len[s] as i64; }
+    return n;
+}
+
+fn put_syms(z: Lz&, out: u8[>..]&, syms: const u32[:], lit: Huff&, dist: Huff&) {
+    for s in syms {
+        if s < 256 {
+            put_bits(z, out, lit.code[s], lit.len[s]);
+        } else {
+            let lc, lbits, lextra = len_code(s & 0xff);
+            put_bits(z, out, lit.code[lc], lit.len[lc]);
+            put_bits(z, out, lextra, lbits);
+            let dc, dbits, dextra = dist_code(s >> 8);
+            put_bits(z, out, dist.code[dc], dist.len[dc]);
+            put_bits(z, out, dextra, dbits);
+        }
+    }
+    put_bits(z, out, lit.code[END_BLOCK], lit.len[END_BLOCK]);
+}
+
+// The header of a dynamic block (RFC 1951 §3.2.7): how many literal/length and
+// distance lengths it sends, then the code-length code, then both codes'
+// lengths as one sequence, coded with the code-length code.
+struct Header {
+    hlit: i64,
+    hdist: i64,
+    hclen: i64,
+    // The code-length symbols, each with its repeat count's extra bits above
+    // bit 8: 16 repeats the last length 3-6 times, 17 a zero 3-10 times, and 18
+    // a zero 11-138 times.
+    n: i64,
+    rle: u32[LIT_CODES + DIST_CODES],
+    cl: Huff,
+}
+
+// The order the code-length code's lengths are sent in, and the extra bits of
+// its symbols 16, 17, and 18.
+let CL_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+let CL_EXTRA = [2, 3, 7];
+
+// Plans the header for codes lit and dist into hd, and returns its length in
+// bits.
+fn plan_header(lit: Huff&, dist: Huff&, hd: Header&) -> i64 {
+    // Trailing zero lengths aren't sent, down to the 257 literal/length codes
+    // and the 1 distance code each header holds.
+    hd.hlit = LIT_CODES;
+    while lit.len[hd.hlit - 1] == 0 { hd.hlit--; }
+    hd.hdist = DIST_CODES;
+    while hd.hdist > 1 && dist.len[hd.hdist - 1] == 0 { hd.hdist--; }
+    var lens: u8[LIT_CODES + DIST_CODES] = [0; LIT_CODES + DIST_CODES];
+    copy_into(lens[..hd.hlit], lit.len[..hd.hlit]);
+    copy_into(lens[hd.hlit..hd.hlit + hd.hdist], dist.len[..hd.hdist]);
+    let all = lens[..hd.hlit + hd.hdist];
+
+    // Runs may cross from the literal/length lengths into the distance ones.
+    hd.n = 0;
+    var i = 0;
+    while i < all.len {
+        let l = all[i];
+        var run = 1;
+        while i + run < all.len && all[i + run] == l { run++; }
+        i += run;
+        if l == 0 {
+            while run >= 11 {
+                let k = min(run, 138);
+                rle_push(hd, 18, k - 11);
+                run -= k;
+            }
+            if run >= 3 {
+                rle_push(hd, 17, run - 3);
+                run = 0;
+            }
+        } else {
+            rle_push(hd, l, 0);
+            run--;
+            while run >= 3 {
+                let k = min(run, 6);
+                rle_push(hd, 16, k - 3);
+                run -= k;
+            }
+        }
+        for j in run { rle_push(hd, l, 0); }
+    }
+
+    var freq: u32[19] = [0; 19];
+    for e in hd.rle[..hd.n] { freq[e & 0xff]++; }
+    huff_build(freq, hd.cl, 7);
+    hd.hclen = 19;
+    while hd.hclen > 4 && hd.cl.len[CL_ORDER[hd.hclen - 1]] == 0 { hd.hclen--; }
+    var bits = 5 + 5 + 4 + 3 * hd.hclen + code_bits(freq, hd.cl);
+    for x, k in CL_EXTRA { bits += freq[16 + k] * x; }
+    return bits;
+}
+
+fn rle_push(hd: Header&, sym: u32, extra: i64) {
+    hd.rle[hd.n] = sym | (extra as! u32) << 8;
+    hd.n++;
+}
+
+fn put_header(z: Lz&, out: u8[>..]&, hd: Header&) {
+    put_bits(z, out, (hd.hlit - 257) as! u32, 5);
+    put_bits(z, out, (hd.hdist - 1) as! u32, 5);
+    put_bits(z, out, (hd.hclen - 4) as! u32, 4);
+    for i in hd.hclen { put_bits(z, out, hd.cl.len[CL_ORDER[i]], 3); }
+    for e in hd.rle[..hd.n] {
+        let s = e & 0xff;
+        put_bits(z, out, hd.cl.code[s], hd.cl.len[s]);
+        if s >= 16 { put_bits(z, out, e >> 8, CL_EXTRA[s - 16]); }
+    }
 }
 
 // The length symbol (257-285) for a match length minus 3, with its extra bits'
@@ -206,33 +337,25 @@ fn dist_code(d: u32) -> i64, i64, u32 {
     return 2 * n + ((x >> extra) & 1), extra, x & ((1 << extra) - 1);
 }
 
-// The fixed literal/length code of each symbol, bit-reversed, since DEFLATE
-// packs Huffman codes from their most significant bit (RFC 1951 §3.1.1).
-let FIXED_LIT_LEN = fixed_lit_lens();
-let FIXED_LIT_CODE = fixed_lit_codes();
+// The fixed codes (RFC 1951 §3.2.6), which are canonical codes of these
+// lengths.
+let FIXED_LIT = fixed_lit();
+let FIXED_DIST = fixed_dist();
 
-fn fixed_lit_lens() -> i64[288] {
-    var t: i64[288] = [0; 288];
-    for s in 288 {
-        t[s] = if s < 144 { 8 } else if s < 256 { 9 } else if s < 280 { 7 } else { 8 };
+fn fixed_lit() -> Huff {
+    var h = Huff { .. };
+    for s in HUFF_MAX {
+        h.len[s] = if s < 144 { 8 } else if s < 256 { 9 } else if s < 280 { 7 } else { 8 };
     }
-    return t;
+    huff_codes(h);
+    return h;
 }
 
-fn fixed_lit_codes() -> u32[288] {
-    var t: u32[288] = [0; 288];
-    for s in 288 {
-        let code = if s < 144 { 0x30 + s } else if s < 256 { 0x190 + s - 144 }
-                   else if s < 280 { s - 256 } else { 0xC0 + s - 280 };
-        t[s] = reverse_bits(code as! u32, FIXED_LIT_LEN[s]);
-    }
-    return t;
-}
-
-fn reverse_bits(code: u32, n: i64) -> u32 {
-    var r: u32 = 0;
-    for i in n { r |= ((code >> i) & 1) << (n - 1 - i); }
-    return r;
+fn fixed_dist() -> Huff {
+    var h = Huff { .. };
+    for s in 32 { h.len[s] = 5; }
+    huff_codes(h);
+    return h;
 }
 
 fn put_bits(z: Lz&, out: u8[>..]&, v: u32, n: i64) {

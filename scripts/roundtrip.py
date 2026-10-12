@@ -6,13 +6,15 @@ level, one-shot and streamed, and fails on the first output that doesn't
 decompress to its input. gzip output also goes through `gzip -dc`. At each
 flush, the output so far must decompress to exactly the input written so far.
 Inputs that repeat must come out smaller than a limit, one-shot at level 1 and
-up. Then a fuzz run of random inputs, levels, and plans, seeded for
-repeatability.
+up. An input whose optimal Huffman code needs more than 15 bits must get a
+dynamic code of exactly 15. Then a fuzz run of random inputs, levels, and
+plans, seeded for repeatability.
 
     scripts/roundtrip.py [ENCODE] [--levels 0,1,6,9] [--fuzz N] [--seed S]
 """
 
 import argparse
+import heapq
 import json
 import os
 import random
@@ -66,28 +68,67 @@ def copies(r, n):
     return bytes(out[:n])
 
 
+def deep_code(r, n=16_000, rare=12, bulk=32):
+    """n bytes, one block of literals, whose optimal Huffman code needs 17
+    bits. Bytes 0 to rare - 1 appear 1, 2, 3, 5, 8, ... times, which with the
+    end-of-block symbol's 1 make a chain of Fibonacci frequencies, each code a
+    bit longer than the next. The rest are `bulk` byte values, about equally
+    frequent, and the chain hangs a few levels down their tree. No 4 bytes
+    repeat, so nothing matches: a match needs its 4 bytes hashed to the same
+    bucket, and two different 4 bytes that share their first 3 never do."""
+    left = []
+    a, b = 1, 2
+    for i in range(rare):
+        left.append(a)
+        a, b = b, a + b
+    rare_at = set(r.sample(range(3, n), sum(left)))
+    out = bytearray()
+    seen = set()
+    for p in range(n):
+        if p in rare_at:
+            cands = sorted((s for s in range(rare) if left[s]),
+                           key=lambda s: -left[s] * r.random())
+        else:
+            cands = r.sample(range(64, 64 + bulk), bulk)
+        for c in cands:
+            gram = bytes(out[-3:]) + bytes([c])
+            if p < 3 or gram not in seen:
+                break
+        else:
+            raise Failure("deep_code: no byte keeps every 4 bytes unique")
+        if p >= 3:
+            seen.add(gram)
+        if p in rare_at:
+            left[c] -= 1
+        out.append(c)
+    return bytes(out)
+
+
 def inputs():
     """Yields each input's name, bytes, and the most its one-shot output may
-    take at level 1 and up, as a share of the input."""
+    take at level 1 and up, as a share of the input: a few percent over what
+    the dynamic code reaches."""
     r = random.Random(3)
     yield "empty", b"", None
     yield "one byte", b"a", None
-    yield "text", text(100_000), 0.4
-    yield "json", json_doc(), 0.4
-    # Stored where the fixed code would grow it.
+    yield "text", text(100_000), 0.24
+    yield "json", json_doc(), 0.235
+    # Stored where a code would grow it.
     yield "random", r.randbytes(300_000), 1.001
     for n in (STORED_MAX - 1, STORED_MAX, STORED_MAX + 1, 2 * STORED_MAX,
               2 * STORED_MAX + 1):
         yield f"{n} bytes", r.randbytes(n), 1.001
-    # 13 bits for each match of 258 in the fixed code.
-    yield "a run of one byte", b"a" * 300_000, 0.01
-    # The block, then 21 bits for each match of 258 at distance 1000.
-    yield "a 1000-byte block, repeated", r.randbytes(1000) * 300, 0.02
-    yield "repeats at 32767", repeats_at(r, WSIZE - 1, 4 * WSIZE), 0.35
-    yield "repeats at 32768", repeats_at(r, WSIZE, 4 * WSIZE), 0.35
+    # Under 3 bits for each match of 258.
+    yield "a run of one byte", b"a" * 300_000, 0.0013
+    # The block, then a match of 258 at distance 1000 every 258 bytes.
+    yield "a 1000-byte block, repeated", r.randbytes(1000) * 300, 0.0095
+    # The first 32 KB stored, then matches.
+    yield "repeats at 32767", repeats_at(r, WSIZE - 1, 4 * WSIZE), 0.27
+    yield "repeats at 32768", repeats_at(r, WSIZE, 4 * WSIZE), 0.27
     # Out of reach: nothing to match, so stored.
     yield "repeats at 32769", repeats_at(r, WSIZE + 1, 4 * WSIZE), 1.001
-    yield "copies within 40 KB", copies(r, 200_000), 0.5
+    yield "copies within 40 KB", copies(r, 200_000), 0.39
+    yield "a code past 15 bits", deep_code(r), 0.66
 
 
 def plans(n):
@@ -144,6 +185,88 @@ def check(encode, fmt, level, data, plan, tmp, limit=None):
         raise Failure(f"{len(out)} bytes out, over {limit} of the {len(data)} in")
 
 
+CL_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
+
+
+def first_block_lengths(raw):
+    """The literal/length and distance code lengths of a raw DEFLATE stream's
+    first block, or None if the block isn't dynamic (RFC 1951 §3.2.7)."""
+    pos = 0
+
+    def bits(n):
+        nonlocal pos
+        v = 0
+        for i in range(n):
+            v |= (raw[pos >> 3] >> (pos & 7) & 1) << i
+            pos += 1
+        return v
+
+    bits(1)
+    if bits(2) != 2:
+        return None
+    hlit, hdist, hclen = bits(5) + 257, bits(5) + 1, bits(4) + 4
+    cl = [0] * 19
+    for i in range(hclen):
+        cl[CL_ORDER[i]] = bits(3)
+    # The canonical code-length code, as (length, code) to symbol; Huffman
+    # codes are packed from their most significant bit.
+    codes = {}
+    code = 0
+    for n in range(1, 8):
+        for s in range(19):
+            if cl[s] == n:
+                codes[(n, code)] = s
+                code += 1
+        code <<= 1
+    lens = []
+    while len(lens) < hlit + hdist:
+        n = code = 0
+        while (n, code) not in codes:
+            if n == 7:
+                raise Failure("a code-length code that decodes nothing")
+            code = code << 1 | bits(1)
+            n += 1
+        s = codes[(n, code)]
+        if s < 16:
+            lens.append(s)
+        elif s == 16:
+            lens += [lens[-1]] * (3 + bits(2))
+        elif s == 17:
+            lens += [0] * (3 + bits(3))
+        else:
+            lens += [0] * (11 + bits(7))
+    return lens[:hlit], lens[hlit:hlit + hdist]
+
+
+def optimal_depth(counts):
+    """The longest code in an optimal Huffman code for counts, unlimited."""
+    h = [(c, 0) for c in counts if c]
+    heapq.heapify(h)
+    while len(h) > 1:
+        a, da = heapq.heappop(h)
+        b, db = heapq.heappop(h)
+        heapq.heappush(h, (a + b, max(da, db) + 1))
+    return h[0][1]
+
+
+def check_limit(encode, level, tmp):
+    """The deep-code input, one-shot in raw DEFLATE, must be one dynamic block
+    whose literal/length code reaches exactly 15 bits and stays complete."""
+    data = deep_code(random.Random(3))
+    counts = [data.count(bytes([b])) for b in range(256)] + [1]
+    if optimal_depth(counts) <= 15:
+        raise Failure("the input's optimal code fits in 15 bits")
+    out, _, _ = run(encode, "raw", level, data, None, tmp)
+    lens = first_block_lengths(out)
+    if lens is None:
+        raise Failure("the first block isn't dynamic")
+    for name, code in zip(("literal/length", "distance"), lens):
+        if sum(1 << (15 - n) for n in code if n) != 1 << 15:
+            raise Failure(f"the {name} code isn't complete")
+    if max(lens[0]) != 15:
+        raise Failure(f"the longest literal/length code is {max(lens[0])} bits")
+
+
 def fuzz_plan(r, n):
     steps = []
     left = n
@@ -176,6 +299,13 @@ def main():
                         except Failure as e:
                             sys.exit(f"FAIL {name}, {fmt}, level {level}, {pname}: {e}")
                         cases += 1
+        for level in levels:
+            if level > 0:
+                try:
+                    check_limit(args.encode, level, tmp)
+                except Failure as e:
+                    sys.exit(f"FAIL the 15-bit limit, level {level}: {e}")
+                cases += 1
         r = random.Random(args.seed)
         for i in range(args.fuzz):
             n = r.choice((0, 1, r.randrange(1000), r.randrange(300_000)))

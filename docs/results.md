@@ -86,3 +86,72 @@ Goose loses every ratio, with 20 to 91 percent more output than zlib-ng: its lev
 its level 1. It beats both libraries' rate on `dickens` and `webster` and zlib-ng's
 on `mozilla`, only because it does a level 1's work. Dynamic tables (step 3) and lazy
 matching (step 4) are what this level is waiting on.
+
+## Levels 1 and 6: dynamic Huffman tables
+
+2026-10-12, task 001 step 3: the step 2 matcher, and each block coded with a dynamic
+code built from its symbol counts, the fixed code, or stored, whichever takes the fewest
+bits. The package's levels 1 and 6 are still the same encoder. `LEVELS="1 6"
+bench/run.sh`: gzip output, one-shot, the whole file in memory, 10 runs per cell, same
+machine, compilers, and libraries as above. MB/s is the median of the 10 runs.
+
+### Level 1
+
+| File | MB | goose ratio | zlib-ng ratio | libdeflate ratio | goose MB/s | zlib-ng MB/s | libdeflate MB/s |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 10.2 | 0.429 | 0.591 | 0.414 | 83.2 | 191.2 | 218.3 |
+| webster | 41.5 | 0.345 | 0.456 | 0.327 | 91.7 | 233.6 | 256.5 |
+| xml | 5.3 | 0.200 | 0.221 | 0.166 | 129.3 | 455.9 | 451.8 |
+| nci | 33.6 | 0.123 | 0.161 | 0.114 | 146.0 | 575.3 | 552.3 |
+| mozilla | 51.2 | 0.401 | 0.468 | 0.394 | 88.5 | 237.5 | 239.2 |
+| samba | 21.6 | 0.281 | 0.349 | 0.272 | 112.4 | 315.1 | 334.0 |
+| x-ray | 8.5 | 0.753 | 0.929 | 0.743 | 60.4 | 125.0 | 141.3 |
+
+The package's output is smaller than zlib-ng's on all seven files, and larger than
+libdeflate's on all seven, by 1.3 percent on `x-ray` to 20 percent on `xml`; at step 2
+libdeflate's was 13 to 32 percent smaller. Goose loses every rate: 2.1 to 3.9 times
+slower than zlib-ng, and 2.3 to 3.8 times slower than libdeflate. Its rates are 3 to 8
+percent below step 2's. Counting and building the codes costs some of that; the
+libraries also ran about 4 percent slower than in the step 2 session, so part of it is
+the machine.
+
+### Level 6
+
+| File | MB | goose ratio | zlib-ng ratio | libdeflate ratio | goose MB/s | zlib-ng MB/s | libdeflate MB/s |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 10.2 | 0.429 | 0.382 | 0.379 | 83.2 | 71.2 | 67.3 |
+| webster | 41.5 | 0.345 | 0.294 | 0.293 | 92.0 | 87.9 | 93.4 |
+| xml | 5.3 | 0.200 | 0.128 | 0.128 | 128.5 | 169.6 | 170.3 |
+| nci | 33.6 | 0.123 | 0.094 | 0.092 | 142.4 | 206.6 | 208.2 |
+| mozilla | 51.2 | 0.401 | 0.379 | 0.367 | 90.4 | 90.1 | 105.3 |
+| samba | 21.6 | 0.281 | 0.255 | 0.247 | 112.5 | 121.2 | 126.4 |
+| x-ray | 8.5 | 0.753 | 0.741 | 0.708 | 60.6 | 65.3 | 102.3 |
+
+Goose loses every ratio, with 2 to 56 percent more output than zlib-ng (20 to 91
+percent at step 2). Its rate beats both libraries' on `dickens`, zlib-ng's on `webster`,
+and ties zlib-ng's on `mozilla`, only because it still does a level 1's work. Lazy
+matching over hash chains (step 4) is what this level is waiting on.
+
+### Where blocks end
+
+2026-10-12, task 001 step 3. Two choices were measured against each other: whether a
+block ends at a slide that would drop its first bytes (so it can still be stored), and
+how many symbols a block holds. Without the slide rule, a block runs on and only loses
+the stored option once its first bytes are gone, as zlib's does. Each variant was built
+with `goose build` and run as `build/bench/bench 1 FILE 3` on the same machine: level 1,
+gzip, one-shot. Output sizes don't vary between runs. The variants' median rates were
+within 6 percent of each other on every file, in no consistent order.
+
+| Variant | Stream holds | Output, 7 files | dickens | xml | mozilla | x-ray |
+|---|---:|---:|---:|---:|---:|---:|
+| Slide rule, 16,384 symbols | 262,484 B | 56,897,983 B | 0.4289 | 0.2002 | 0.4013 | 0.7533 |
+| Slide rule, 32,768 symbols | 328,020 B | +0.02% | 0.4287 | 0.2003 | 0.4017 | 0.7521 |
+| No slide rule, 16,384 | 262,484 B | +0.05% | 0.4288 | 0.2004 | 0.4020 | 0.7533 |
+| No slide rule, 32,768 | 328,020 B | +0.26% | 0.4284 | 0.2014 | 0.4045 | 0.7521 |
+| No slide rule, 65,536 | 459,092 B | +0.55% | 0.4282 | 0.2031 | 0.4071 | 0.7517 |
+
+The 7 files hold 171,850,994 bytes. The current choice, the slide rule and 16,384
+symbols, gives the least output in all and holds the least memory. Larger blocks help
+text by under 0.2 percent and cost mixed files more (`mozilla` 1.4 percent at 65,536),
+because a smaller block's code follows the data more closely; a dynamic header of a few
+dozen bytes is small beside a block of 16,384 symbols.

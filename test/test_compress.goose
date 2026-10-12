@@ -1,7 +1,7 @@
 // Unit tests for the checksums and the encoder: known checksum values, the
-// exact bytes of small streams at level 0 and of small fixed-Huffman streams at
-// level 1, and that a stream's bytes don't depend on how its input was split
-// across writes. scripts/test-unit.sh runs them through TinyCC;
+// Huffman code builder, the exact bytes of small streams at level 0 and of
+// small fixed and dynamic Huffman streams at level 1, and that a stream's
+// bytes don't depend on how its input was split across writes. scripts/test-unit.sh runs them through TinyCC;
 // scripts/roundtrip.py checks the output against gzip and Python's zlib.
 import std;
 import compress from "../";
@@ -88,7 +88,93 @@ fn test_fixed() {
     assert(raw("hello, hello, hello", 9) == raw("hello, hello, hello", 1));
 }
 
-// Random bytes would grow in the fixed code, so the block is stored.
+// The Kraft sum of h's lengths in units of 2^-15, which is 2^15 for a
+// complete code.
+fn kraft(h: compress::Huff&) -> i64 {
+    var sum = 0;
+    for n in h.len { if n > 0 { sum += 1 << (15 - n); } }
+    return sum;
+}
+
+fn test_huffman() {
+    // RFC 1951 §3.2.2's example: lengths 3, 3, 3, 3, 3, 2, 4, 4 give codes
+    // 010, 011, 100, 101, 110, 00, 1110, and 1111, here bit-reversed: 010,
+    // 110, 001, 101, 011, 00, 0111, and 1111.
+    var h = compress::Huff { .. };
+    for n, s in [3, 3, 3, 3, 3, 2, 4, 4] { h.len[s] = n as! u8; }
+    compress::huff_codes(h);
+    for c, s in [0x2, 0x6, 0x1, 0x5, 0x3, 0x0, 0x7, 0xf] {
+        assert(h.code[s] == c);
+    }
+
+    // Optimal lengths, and none for a symbol that isn't used.
+    compress::huff_build([1, 1, 2, 0, 3, 5, 8], h, 15);
+    for n, s in [5, 5, 4, 0, 3, 2, 1] { assert(h.len[s] == n); }
+    assert(kraft(h) == 1 << 15);
+
+    // With fewer than two symbols used, two get 1 bit.
+    compress::huff_build([0, 0, 0, 7], h, 15);
+    for n, s in [1, 0, 0, 1] { assert(h.len[s] == n); }
+    compress::huff_build([0, 0, 0], h, 15);
+    for n, s in [1, 1, 0] { assert(h.len[s] == n); }
+
+    // Fibonacci frequencies would take 28 bits for 29 symbols; the code
+    // stops at the limit and stays complete, with the least frequent symbols
+    // the longest.
+    var fib: u32[29] = [0; 29];
+    fib[0] = 1;
+    fib[1] = 1;
+    for i in 2..29 { fib[i] = fib[i - 1] + fib[i - 2]; }
+    compress::huff_build(fib, h, 15);
+    assert(h.len[0] == 15 && h.len[28] < 15 && kraft(h) == 1 << 15);
+    for i in 1..29 { assert(h.len[i] <= h.len[i - 1]); }
+    // The code-length code's limit: 19 symbols in 7 bits.
+    compress::huff_build(fib[..19], h, 7);
+    var sum = 0;
+    for n in h.len[..19] {
+        assert(n >= 1 && n <= 7);
+        sum += 1 << (7 - n);
+    }
+    assert(sum == 1 << 7);
+}
+
+// Small dynamic blocks, which Python's zlib decompresses to their input.
+fn test_dynamic() {
+    // No 3 bytes repeat, so nothing matches and the distance code is the
+    // two 1-bit codes a block without distances sends.
+    let db = "aaacaagaataccacgactagcaggagtatcatgattcccgcctcggcgtctgcttgggtgttt";
+    assert(same(raw(db, 1), [
+        0x05, 0xc1, 0x31, 0x0d, 0x00, 0x00, 0x00, 0x83, 0x30, 0xad, 0x0b, 0x07,
+        0x06, 0xf0, 0x9f, 0xb5, 0xdb, 0xd8, 0xdc, 0x1a, 0x0c, 0x47, 0x93, 0xe9,
+        0x6c, 0xb1, 0x5c, 0x01, 0x42, 0x28, 0x46, 0x52, 0x6a, 0x56, 0x07]));
+    // Literals and one match of 5 at distance 7.
+    let dna = "gattacagattaccatgacgtagctagcatcgtacgatcgatgcatgctagg";
+    let one = raw(dna, 1);
+    assert(same(one, [
+        0x25, 0x8a, 0xc9, 0x0d, 0x00, 0x20, 0x00, 0xc2, 0x66, 0x6d, 0x78, 0xb0,
+        0x40, 0xf7, 0x8f, 0xa2, 0x8f, 0x86, 0x23, 0x2d, 0x4a, 0xf8, 0x11, 0x2c,
+        0xa9, 0x34, 0x03, 0xd7, 0x73, 0x95, 0xb1, 0xfd, 0xfe, 0x1e]));
+    // The final bit and BTYPE 2.
+    assert(one[0] & 7 == 5);
+
+    // A dynamic block ended by a flush, then one that matches across it.
+    var e = compress::encoder(compress::RAW, 1);
+    var out: u8[>..] = [];
+    compress::write(e, dna, out);
+    compress::flush(e, out);
+    assert(out.len == one.len + 5 && out[0] == one[0] & 0xfe);
+    assert(out[1..one.len] == one[1..] && same(out[one.len..], [0, 0, 0, 0xff, 0xff]));
+    out.clear();
+    compress::write(e, db, out);
+    compress::finish(e, out);
+    assert(same(out, [
+        0x1d, 0xcb, 0xb1, 0x09, 0x00, 0x40, 0x10, 0x84, 0xc0, 0x5a, 0x65, 0x03,
+        0x1b, 0xb0, 0x7f, 0x9e, 0xfb, 0x54, 0x1c, 0x60, 0x20, 0x7c, 0x32, 0xb9,
+        0x3a, 0x14, 0xa3, 0xdb, 0xa8, 0x6d, 0x6e, 0x4d, 0x67, 0x3b, 0x99, 0x9a,
+        0xd5, 0x03]));
+}
+
+// Random bytes would grow in a code, so the block is stored.
 fn test_stored_fallback() {
     var data: u8[>..] = [];
     var r = rng { 11 };
@@ -210,6 +296,8 @@ fn main() {
     test_one_byte();
     test_headers();
     test_fixed();
+    test_huffman();
+    test_dynamic();
     test_stored_fallback();
     test_far_matches();
     test_splits();

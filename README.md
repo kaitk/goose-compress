@@ -6,8 +6,9 @@ Goose, with no C ([architecture](docs/architecture/README.md)). Its first user i
 [goose-http](https://github.com/kaitk/goose-http), which compresses responses with it.
 
 Early work: at levels 1 and up, the encoder finds LZ77 matches with one hash probe a
-position and codes them with DEFLATE's fixed Huffman tables. Dynamic tables and speed
-come next (task 001).
+position and codes each block with a dynamic Huffman code built from it, the fixed
+code, or stored, whichever is shortest. Speed and a stronger level come next (task
+001).
 
 ## Status
 
@@ -15,7 +16,7 @@ come next (task 001).
 
 | | Encoding | Notes |
 |---|---|---|
-| 🟡 | gzip | LZ77 with the fixed Huffman tables. Dynamic tables next (task 001). |
+| 🟡 | gzip | LZ77 with dynamic Huffman codes. Speed and lazy matching next (task 001). |
 | 🟡 | zlib (HTTP's `deflate`) | The same DEFLATE stream as gzip, with the zlib header and Adler-32. |
 | 🟡 | Raw DEFLATE | The same stream with no wrapper. |
 | 🔴 | zstd | Later, in this package, once gzip is measured. |
@@ -63,8 +64,8 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
   `deflate`), and `compress::RAW` (RFC 1951 alone).
 - **Levels**: 0 stores; 1 to 9 compress, and `compress::DEFAULT_LEVEL` is 6, as zlib's.
   Every level from 1 compresses the same way until task 001's step 4 adds a stronger
-  one. Each block is coded with the fixed Huffman tables, or stored where that's
-  shorter, so incompressible input grows by about 5 bytes every 16 KB.
+  one. Each block is coded with a dynamic Huffman code, the fixed code, or stored,
+  whichever is shortest, so incompressible input grows by about 5 bytes every 16 KB.
 - **`compress::compress(data, out, format = GZIP, level = DEFAULT_LEVEL)`**: compresses
   `data` whole into one stream.
 - **`compress::encoder(format = GZIP, level = DEFAULT_LEVEL)`**: a stream,
@@ -91,17 +92,20 @@ At level 0, where all three store, the package compresses about 345 MB/s on an M
 against zlib-ng's 7.0-7.4 GB/s and libdeflate's 21-32 GB/s. The gap is CRC-32, which
 both libraries compute with a carryless multiply that Goose can't express
 ([findings](docs/goose-findings.md#goose-has-no-carryless-multiply)). At level 1, with
-the fixed Huffman tables, it compresses 65-159 MB/s on Silesia files, 1.9 to 3.7 times
-slower than zlib-ng and libdeflate. Its output is smaller than zlib-ng's on six files of
-seven and larger than libdeflate's on all seven.
+dynamic Huffman codes, it compresses 60-146 MB/s on Silesia files, 2.1 to 3.9 times
+slower than zlib-ng and libdeflate. Its output is smaller than zlib-ng's on all seven
+files and 1.3 to 20 percent larger than libdeflate's.
 
 ## Credits
 
 No code is adopted from another encoder. The CRC-32 table and Adler-32's 5,552-byte
 run between reductions (zlib's `NMAX`) follow zlib and its RFCs. From zlib too: a block
-of at most 16,384 symbols (its default memory level), the choice of a stored block
-where the fixed code would be longer, the zlib header's `FLEVEL` and gzip's `XFL` for
-each level, and the flush as `Z_SYNC_FLUSH`. libdeflate
+of at most 16,384 symbols (its default memory level), the choice among stored, fixed,
+and dynamic blocks by bit count with its tie-breaks, the way it limits code lengths to
+15 bits and gives a code at least two symbols, the zlib header's `FLEVEL` and gzip's
+`XFL` for each level, and the flush as `Z_SYNC_FLUSH`. The optimal code lengths come
+from Moffat and Katajainen's in-place algorithm ("In-Place Calculation of
+Minimum-Redundancy Codes", 1995). libdeflate
 ([ebiggers/libdeflate](https://github.com/ebiggers/libdeflate)) and zlib-ng
 ([zlib-ng/zlib-ng](https://github.com/zlib-ng/zlib-ng)) are the benchmark's
 competitors; when the package takes an idea from either, this section names it.
@@ -111,6 +115,7 @@ competitors; when the package takes an idea from either, this section names it.
 ```text
 compress.goose   the package's entry: formats, the one-shot and streaming encoders
 deflate.goose    the DEFLATE stream at levels 1 and up: LZ77, the bit writer, blocks
+huffman.goose    length-limited Huffman codes for dynamic blocks
 checksum.goose   CRC-32 and Adler-32
 test/            unit tests, and encode.goose, which scripts/roundtrip.py drives
 scripts/         test scripts
