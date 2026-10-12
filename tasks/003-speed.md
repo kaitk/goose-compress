@@ -37,9 +37,8 @@ In rough order of expected payoff:
    ([findings](../docs/goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)).
    Look for a way within the language that the findings entry doesn't rule out
    already; if there is none, leave it to the maintainer.
-5. Adler-32 for zlib output, unmeasured so far. Mark it `simd fn` if the loop
-   vectorizes; `simd fn` builds wider versions on x86-64 only, so on arm64 that part
-   stays unmeasured.
+5. Adler-32 for zlib output: done on the Windows machine, as a `simd fn` summing 32
+   lanes (540ae3c). Its measurement is that machine's to record.
 
 Bounds checks the hot paths keep at `c38dc0f` (`goose check --bce-lines
 bench/bench.goose`, 2026-10-12): the hash-table index in `match_fast`, `insert`, and

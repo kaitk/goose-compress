@@ -56,11 +56,15 @@ until the task named beside it confirms or replaces it.
   on `nci` (`docs/results.md`, task 001 step 4, 2026-10-12).
 - **Hash chains as distances, after libdeflate's `hc_matchfinder`.** From level 2,
   each stream offset's slot (offset modulo 32,768) holds the distance back to the
-  previous offset in its bucket, as a `u16`, or 0 when it's farther than 32,768. A
-  slot is good until the offset 32,768 later takes it, so a search follows one only
-  from less than 32,768 back. Distances keep the table at 64 KB with nothing to
-  rewrite at a slide, as the hash table's offsets do; libdeflate's and zlib's `u16`
-  window positions are rebased at each slide (task 001 step 4, 2026-10-12).
+  previous offset in its bucket, as a `u16`, or 65,535 when it's farther than 32,768.
+  A slot is good until the offset 32,768 later takes it. A search stops when a
+  distance leaves the range 1 to 32,768 (or to the position, at the stream's start),
+  one unsigned compare: 65,535 always leaves it, and so does the step out of a slot
+  that the search's own position took, 32,768 back. One test in place of five made
+  level 6 and 9 up to 8.7 percent faster on `x-ray` (task 003, 2026-10-12). Distances
+  keep the table at 64 KB with nothing to rewrite at a slide, as the hash table's
+  offsets do; libdeflate's and zlib's `u16` window positions are rebased at each slide
+  (task 001 step 4, 2026-10-12).
 - **A search compares a candidate's 4 hashed bytes and the byte at the best length so
   far before extending it.** Most candidates fail there. At level 1, comparing the 4
   bytes at once made the encoder 16 to 27 percent faster. Extending 8 bytes at a time
