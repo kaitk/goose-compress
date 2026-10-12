@@ -39,6 +39,11 @@ fn test_checksums() {
     for cut in [1, 15, 16, 17, 5000] {
         assert(compress::crc32(compress::crc32(0, bytes[..cut]), bytes[cut..]) == 0xBBCE3B9D);
     }
+    // 32-byte blocks across runs, and the bytes left over, as zlib.adler32 gives it.
+    assert(compress::adler32(1, bytes) == 0xF475ED1E);
+    for cut in [1, 31, 32, 33, 5552, 5553, 5600] {
+        assert(compress::adler32(compress::adler32(1, bytes[..cut]), bytes[cut..]) == 0xF475ED1E);
+    }
 }
 
 fn test_empty() {

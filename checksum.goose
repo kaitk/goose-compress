@@ -45,12 +45,38 @@ fn crc32(crc: u32, data: const u8[:]) -> u32 {
 let ADLER_RUN = 5552;
 let ADLER_MOD: u32 = 65521;
 
-fn adler32(adler: u32, data: const u8[:]) -> u32 {
+// A run is taken 32 bytes at a time in 32 lanes, so the C compiler vectorizes
+// it: lane j sums byte j of each block (s1) and, before each block, what it held
+// (s2). After k blocks, a gained the sum of s1 and b gained 32 k a, 32 times the
+// sum of s2, and each s1[j] weighted by 32 - j.
+simd fn adler32(adler: u32, data: const u8[:]) -> u32 {
     var a = adler & 0xFFFF;
     var b = adler >> 16;
     var at = 0;
     while at < data.len {
         let end = min(at + ADLER_RUN, data.len);
+        let blocks = (end - at) / 32;
+        if blocks > 0 {
+            var s1: u32[32] = [0; 32];
+            var s2: u32[32] = [0; 32];
+            for k in blocks {
+                let p = at + 32 * k;
+                // j & 31 proves the lanes in bounds; the slice holds 32 bytes.
+                for x, j in data[p..p + 32] {
+                    s2[j & 31] += s1[j & 31];
+                    s1[j & 31] += x;
+                }
+            }
+            var sum1: u64 = 0;
+            var sum2: u64 = 0;
+            for j in 32 {
+                sum1 += s1[j];
+                sum2 += 32 * s2[j] as u64 + (32 - j) as! u64 * s1[j];
+            }
+            b = ((b + 32 * blocks as! u64 * a + sum2) % ADLER_MOD) as! u32;
+            a = ((a + sum1) % ADLER_MOD) as! u32;
+            at += 32 * blocks;
+        }
         for x in data[at..end] {
             a += x;
             b += a;
