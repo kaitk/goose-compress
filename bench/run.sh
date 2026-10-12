@@ -1,6 +1,6 @@
 #!/bin/sh
-# Compresses each corpus file to gzip with goose-compress, libdeflate, and
-# zlib-ng, at each level in LEVELS, and prints a Markdown table: the output's
+# Compresses each corpus file to gzip with goose-compress, zlib-ng, and
+# libdeflate, at each level in LEVELS, and prints a Markdown table: the output's
 # share of the input, and the median and best rate in MB/s of RUNS runs.
 # bench/build.sh builds what it runs.
 #
@@ -23,8 +23,8 @@ for f in $files; do
     path=$f
     [ -f "$path" ] || path=$out/corpus/$f
     for level in $levels; do
-        for cmd in "$out/bench $level" "$out/ref libdeflate $level" \
-            "$out/ref zlib-ng $level"; do
+        for cmd in "$out/bench $level" "$out/ref zlib-ng $level" \
+            "$out/ref libdeflate $level"; do
             # shellcheck disable=SC2086
             $cmd "$path" "$runs" | awk -v f="$(basename "$path")" '{
                 printf "| %s | %.1f | %s | %s | %.3f | %s | %s |\n",
