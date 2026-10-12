@@ -38,8 +38,9 @@ In rough order of expected payoff:
    Look for a way within the language that the findings entry doesn't rule out
    already; if there is none, leave it to the maintainer. Done on the Windows
    machine: `reset` zeroes an encoder in place, and `compress` resets one it keeps
-   per program instance, 108 to 7.3 µs for 100 bytes there; the M1 Pro's figure is
-   unmeasured. `var e: Encoder;` as a local doesn't compile ("may be used before it
+   per program instance, 108 to 7.3 µs for 100 bytes there, and 24 to 8 µs on the M1
+   Pro. Leaving `syms` and `win` uncleared in `reset` saved 1.1 µs a call but made
+   10,000 bytes at level 6 slower on the M1 Pro; not kept. `var e: Encoder;` as a local doesn't compile ("may be used before it
    is assigned").
 5. Adler-32 for zlib output: done on the Windows machine, as a `simd fn` summing 32
    lanes (540ae3c), and measured there (`docs/results.md`).

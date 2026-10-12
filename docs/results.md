@@ -375,10 +375,54 @@ fell where the loop's exits land, against no instruction above 7 percent in libd
 | One unsigned range test ends a chain; `nice` passed in | 6 | 43.2 → 43.5 | 61.4 → 63.4 | 49.4 → 53.9 | 112.2 → 112.4 | yes |
 | The same, run again | 6 | | 61.3 → 63.3 | 49.2 → 53.8 | | |
 | The same | 9 | 21.7 → 21.8 | | 46.9 → 50.8 | 37.5 → 37.9 | |
+| The same, under `LC_ALL=C` | 6 | 43.4 → 43.7 | 61.0 → 63.5 | 49.0 → 53.7 | 112.4 → 112.6 | |
 
 The `u16` table gave 488 to 595 bytes less output, but its offsets wrap every 64 KB, so
 stale entries pass the distance test and cost a full probe, where the `u32` table turns
 them away before any compare.
+
+The rows above the last chose each cell's best round under a decimal-comma locale, in
+which `awk` compared only the whole MB/s, so a cell may be a round up to 1 MB/s short
+of the best. The last row is the range test run again with that fixed.
+
+The Ryzen's changes, run here against the build before each (same method, under
+`LC_ALL=C`, at a load average of 4.2 to 7.7):
+
+| Change | Level | dickens | mozilla | x-ray | xml |
+|---|---:|---|---|---|---|
+| Length and distance codes from tables (`43cb937`) | 1 | 155.9 → 162.5 | 166.7 → 169.2 | 109.0 → 109.5 | 278.6 → 287.5 |
+| The same | 6 | 43.7 → 44.1 | 63.6 → 63.9 | 53.6 → 54.2 | 111.8 → 113.1 |
+| 2^16 buckets, and `compress` resetting one encoder (`042d72a`) | 1 | 163.0 → 164.0 | 172.2 → 175.6 | 109.0 → 106.7 | 289.5 → 295.1 |
+| The same | 6 | 44.1 → 45.0 | 63.8 → 68.2 | 54.0 → 67.5 | 113.0 → 114.3 |
+
+Both hold here. The tables gain 0.5 to 4.2 percent at level 1, where task 001 step 4
+measured -1.7 to +3.1 percent. The 2^16 buckets make level 6 25 percent faster on
+`x-ray` and 7 percent faster on `mozilla`, as task 001 step 4 measured them.
+
+#### Small inputs
+
+The Ryzen's method: a program built with `goose build` calls `compress::compress`
+(gzip) on the first N bytes of `dickens` 20,000,000 / (N + 2,000) times in a row, 5
+times over; a cell is the best of the 5 averages, in µs a call, over 3 alternating runs
+of the two programs.
+
+| Build | Level | 100 bytes | 1,000 bytes | 10,000 bytes |
+|---|---:|---:|---:|---:|
+| `43cb937`: a new `Encoder` a call | 1 | 23.8 | 27.0 | 59.1 |
+| `042d72a`: one `Encoder`, `reset` a call | 1 | 7.8 | 11.4 | 42.5 |
+| `43cb937` | 6 | 24.2 | 31.0 | 124.0 |
+| `042d72a` | 6 | 8.1 | 14.9 | 102.5 |
+| `042d72a` | 1 | 7.7 | 11.3 | 42.7 |
+| `reset` leaving `syms` and `win` as they were | 1 | 6.6 | 10.2 | 43.2 |
+| `042d72a` | 6 | 8.1 | 14.9 | 101.8 |
+| `reset` leaving `syms` and `win` as they were | 6 | 7.0 | 13.7 | 111.1 |
+
+`reset` takes a 100-byte call from 24 to 8 µs here, against 108 to 7.3 µs on the
+Ryzen. Not clearing `syms` and `win` saves about 1.1 µs a call, but at 10,000 bytes
+level 6 is 7 to 9 percent slower in each round; on whole Silesia files level 6 is
+unchanged (-0.8 to +0.4 percent). The likely cause is that clearing the window left it
+in the cache just before the input is copied in, after the 256 KB clear of the hash
+table has pushed the rest out. Not kept.
 
 ## AMD Ryzen 7 5800X3D, Windows
 
