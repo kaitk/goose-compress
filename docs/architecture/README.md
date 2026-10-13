@@ -75,21 +75,24 @@ until the task named beside it confirms or replaces it.
   matches of up to 32 bytes was faster only on the most compressible files (`nci` 17
   percent, `xml` 9 percent), where level 1 is fastest already, and 2.6 percent larger
   on `nci` (`docs/results-history.md`, task 001 step 4, 2026-10-12).
-- **Hash chains as distances, after libdeflate's `hc_matchfinder`.** From level 2,
-  each stream offset's slot (offset modulo 32,768) holds the distance back to the
-  previous offset in its bucket, as a `u16`, or 65,535 when it's farther than 32,768.
-  A slot is good until the offset 32,768 later takes it. A search stops when a
-  distance leaves the range 1 to 32,768 (or to the position, at the stream's start),
-  one unsigned compare: 65,535 always leaves it, and so does the step out of a slot
-  that the search's own position took, 32,768 back. One test in place of five made
-  level 6 and 9 up to 8.7 percent faster on `x-ray` (task 003, 2026-10-12). Distances
-  keep the table at 64 KB with nothing to rewrite at a slide, as the hash table's
-  offsets do; libdeflate's and zlib's `u16` window positions are rebased at each slide
-  (task 001 step 4, 2026-10-12).
-- **A search compares a candidate's 4 hashed bytes and the byte at the best length so
-  far before extending it.** Most candidates fail there. At level 1, comparing the 4
-  bytes at once made the encoder 16 to 27 percent faster. Extending 8 bytes at a time
-  was no faster at any level, because matches are short, and std's `ctz` is a loop
+- **Hash chains as the low 16 bits of offsets, after libdeflate's `hc_matchfinder`.**
+  From level 2, each stream offset's slot (offset modulo 32,768) holds the low 16 bits
+  of the previous offset in its bucket, or of the offset 32,768 back when that one is
+  farther. A search reads links only from offsets up to 32,768 back, whose slots no
+  later offset has taken, so the 16 bits place the link; a search writes its own
+  position's link after its walk, so the offset 32,768 back stays reachable. A chain
+  step is then a load and a mask, as libdeflate's, where distances took a load, two
+  additions, and a mask on the path from one load to the next. With the candidate test
+  below and the search inlined, levels 6 and 9 got 22 to 92 percent faster on the
+  Ryzen, writing the same bytes (task 005, 2026-10-13). The table stays 64 KB with
+  nothing to rewrite at a slide. A slide-rebased `u16` head table, as libdeflate's,
+  was slower at level 9 in a C prototype (task 005).
+- **A search compares a candidate's 4 hashed bytes, and once it has a match, the 4
+  bytes ending at the best length, before extending it,** as libdeflate's does. Until
+  the first match, it compares only the 4 hashed bytes. Most candidates fail there.
+  At level 1, comparing the 4 bytes at once made the encoder 16 to 27 percent faster.
+  Extending 8 bytes at a time was no faster at any level, because matches are short,
+  and std's `ctz` is a loop
   ([findings](../goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)) (task 001 step
   4, 2026-10-12).
 - **Length and distance codes, and a distance's logarithm for lazy matching, come from

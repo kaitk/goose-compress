@@ -55,9 +55,10 @@ struct Lz {
     // candidate is compared byte by byte.
     head: u32[HASH_SIZE],
     // From level 2, the hash chains: for each stream offset modulo WSIZE, the
-    // distance back to the one before it in its bucket, or NO_PREV for none
-    // in reach. An entry is good until the offset WSIZE later takes its slot;
-    // a step taken from WSIZE back reads the new entry and leaves reach.
+    // low 16 bits of the one before it in its bucket, or of the offset WSIZE
+    // back for none in reach. A search reads links only from offsets up to
+    // WSIZE back, whose slots no later offset has taken, so the link lies
+    // within 2 * WSIZE and its 16 bits place it.
     prev: u16[WSIZE],
     // A lazy level's match found at pos while it looked ahead, or a length
     // of 0.
@@ -245,55 +246,80 @@ fn log2_tab() -> i64[256] {
     return t;
 }
 
-// Inserts position i into its hash chain, and returns the distance to the
-// bucket's entry before it.
-fn insert(z: Lz&, i: i64) -> i64 {
-    return insert_hashed(z, i, z.base + i as! u32, hash4(load32(z.win, i)));
-}
-
-// insert, for position i at stream offset here, whose hash is h.
-fn insert_hashed(z: Lz&, i: i64, here: u32, h: i64) -> i64 {
-    let d: i64 = here - z.head[h];
+// Inserts position i into its hash chain.
+fn insert(z: Lz&, i: i64) {
+    let here = z.base + i as! u32;
+    let h = hash4(load32(z.win, i));
+    link(z, here, z.head[h]);
     z.head[h] = here;
-    z.prev[(here & (WSIZE - 1)) as i64] =
-        (if (d - 1) as! u64 < WSIZE { d } else { NO_PREV }) as! u16;
-    return d;
 }
 
-// A chain entry for no earlier position in reach: farther than any search
-// goes.
-let NO_PREV = 65535;
+// Sets the chain link of stream offset here to old, the entry before it in
+// its bucket.
+fn link(z: Lz&, here: u32, old: u32) {
+    z.prev[(here & (WSIZE - 1)) as i64] =
+        (if here - old - 1 < WSIZE { old } else { here - WSIZE }) as! u16;
+}
 
 // Inserts p, then returns the longest match at p longer than `floor`, with its
 // distance, or a length of 0. It compares at most `depth` candidates, newest
-// first, and stops at a match of `nice`.
-fn search(z: Lz&, p: i64, floor: i64, depth: i64, nice: i64) -> i64, i64 {
+// first, and stops at a match of `nice`. As libdeflate's hc_matchfinder, it
+// is inlined at each call.
+inline fn search(z: Lz&, p: i64, floor: i64, depth: i64, nice: i64) -> i64, i64 {
     guard p + 4 <= z.fill else { return 0, 0; }
     let here = z.base + p as! u32;
     let h = if here == z.next_off { z.next_h } else { hash4(load32(z.win, p)) };
-    var d = insert_hashed(z, p, here, h);
+    let old = z.head[h];
+    z.head[h] = here;
     if p + 5 <= z.fill {
         let h1 = hash4(load32(z.win, p + 1));
         z.warm = z.head[h1];
         z.next_h = h1;
         z.next_off = here + 1;
     }
+    let len, dist = walk(z, p, here, old, floor, depth, nice);
+    // Until now p's slot held the link of the offset WSIZE back, a candidate.
+    link(z, here, old);
+    return len, dist;
+}
+
+// search's walk along p's chain, from old, the entry before p in its bucket.
+// A chain step is a load and a mask: the offset read is the next link's
+// index.
+inline fn walk(z: Lz&, p: i64, here: u32, old: u32, floor: i64, depth: i64,
+               nice: i64) -> i64, i64 {
     let most = min(MAX_MATCH, z.fill - p);
     let enough = min(nice, most);
     let v = load32(z.win, p);
     var best = floor;
     var best_dist = 0;
     guard best < enough else { return 0, 0; }
-    // A distance is in reach from 1 to `reach`, one unsigned compare. A chain
-    // that ends steps out of reach: by NO_PREV, or, from WSIZE back, by the
-    // step p's own insert left in the slot it shares.
+    // A distance is in reach from 1 to `reach`, one unsigned compare.
     let reach = min(WSIZE, p) as! u64;
+    var node = old;
+    var d: i64 = here - old;
     var left = depth;
+    // Until one matches, a candidate needs only the 4 bytes hashed.
+    if best < 4 {
+        while (d - 1) as! u64 < reach && left > 0 && load32(z.win, p - d) != v {
+            node = z.prev[(node & (WSIZE - 1)) as i64];
+            d = (here - node) & 0xFFFF;
+            left--;
+        }
+        guard (d - 1) as! u64 < reach && left > 0 else { return 0, 0; }
+        best = 4 + match_len(z.win, p - d + 4, p + 4, most - 4);
+        best_dist = d;
+        guard best < enough else { return best, best_dist; }
+        node = z.prev[(node & (WSIZE - 1)) as i64];
+        d = (here - node) & 0xFFFF;
+        left--;
+    }
     while (d - 1) as! u64 < reach && left > 0 {
         let c = p - d;
-        // The byte that would make the match longer than the best, then the 4
-        // hashed, turn away most candidates.
-        if z.win[c + best] == z.win[p + best] && load32(z.win, c) == v {
+        // The 4 bytes that end where a longer match would, then the 4 hashed,
+        // turn away most candidates.
+        if load32(z.win, c + best - 3) == load32(z.win, p + best - 3) &&
+           load32(z.win, c) == v {
             let len = 4 + match_len(z.win, c + 4, p + 4, most - 4);
             if len > best {
                 best = len;
@@ -301,7 +327,8 @@ fn search(z: Lz&, p: i64, floor: i64, depth: i64, nice: i64) -> i64, i64 {
                 guard best < enough else { break; }
             }
         }
-        d += z.prev[((z.base + c as! u32) & (WSIZE - 1)) as i64];
+        node = z.prev[(node & (WSIZE - 1)) as i64];
+        d = (here - node) & 0xFFFF;
         left--;
     }
     guard best_dist > 0 else { return 0, 0; }
