@@ -410,7 +410,8 @@ fn zstd_seq(e: ZstdEncoder&, lits: i64, dist: i64, len: i64) {
 
 // One block of win[start..end]: compressed where that's smaller, else raw, or
 // RLE where it's one repeated byte. A compressed block may hold literals
-// alone.
+// alone. Where a bound on the sequences' bits shows it's smaller, it's written
+// at once, its header filled in after; else the bits are counted first.
 fn zstd_block(e: ZstdEncoder&, out: u8[>..]&, start: i64, end: i64, last: bool) {
     let data = e.win[start..end];
     let run = is_run(data);
@@ -423,6 +424,7 @@ fn zstd_block(e: ZstdEncoder&, out: u8[>..]&, start: i64, end: i64, last: bool) 
         let n = e.nseq;
         let sh = if n == 0 { 1 } else if n < 128 { 2 } else if n < 0x7F00 { 3 } else { 4 };
         var size = l.size + sh;
+        var bound = size;
         // Each kind's mode and description, and the slot of its table.
         var mode: i64[3] = [0; 3];
         var slot: i64[3] = [0; 3];
@@ -430,19 +432,25 @@ fn zstd_block(e: ZstdEncoder&, out: u8[>..]&, start: i64, end: i64, last: bool) 
         if n > 0 {
             // The codes a coder starts in, the last sequence's.
             let first = [e.llc[n - 1], e.ofc[n - 1], e.mlc[n - 1]];
+            var bits = 1;
             for k in 3 {
                 let kc = count[k * FSE_SYMS..(k + 1) * FSE_SYMS];
                 mode[k] = plan_table(e, k, kc, first[k], desc[k]);
                 slot[k] = 2 * k + (if mode[k] == FSE_REPEAT { e.cur[k] } else { 1 - e.cur[k] });
                 size += desc[k].o;
+                bits += seq_bound(e.fse[slot[k]], k, kc);
             }
-            let tl .= e.fse[slot[ZSTD_LL]];
-            let to .= e.fse[slot[ZSTD_OF]];
-            let tm .= e.fse[slot[ZSTD_ML]];
-            size += (seq_bits(e, tl, to, tm) + 1 + 7) / 8;
+            bound = size + (bits + 7) / 8;
+            if bound >= data.len {
+                let tl .= e.fse[slot[ZSTD_LL]];
+                let to .= e.fse[slot[ZSTD_OF]];
+                let tm .= e.fse[slot[ZSTD_ML]];
+                size += (seq_bits(e, tl, to, tm) + 1 + 7) / 8;
+            }
         }
-        if size < data.len {
-            put_le24(out, size << 3 | ZSTD_COMPRESSED << 1 | (if last { 1 } else { 0 }));
+        if bound < data.len || size < data.len {
+            let at = out.len;
+            put_le24(out, 0);
             put_literals(seqs, out, data, l);
             if n < 128 {
                 out.push(n as! u8);
@@ -461,6 +469,10 @@ fn zstd_block(e: ZstdEncoder&, out: u8[>..]&, start: i64, end: i64, last: bool) 
                 put_seqs(e, out, e.fse[slot[ZSTD_LL]], e.fse[slot[ZSTD_OF]],
                          e.fse[slot[ZSTD_ML]]);
             }
+            let h = (out.len - at - 3) << 3 | ZSTD_COMPRESSED << 1 | (if last { 1 } else { 0 });
+            out[at] = h as! u8;
+            out[at + 1] = (h >> 8) as! u8;
+            out[at + 2] = (h >> 16) as! u8;
             e.rep0 = r0;
             e.rep1 = r1;
             e.rep2 = r2;
@@ -468,6 +480,20 @@ fn zstd_block(e: ZstdEncoder&, out: u8[>..]&, start: i64, end: i64, last: bool) 
         }
     }
     zstd_stored(out, data, run, last);
+}
+
+// The most bits kind k's codes, of these counts, take in table t: each code's
+// extra bits, and the most bits a state of its writes. The first sequence's
+// state, written whole, is at most t.log of them.
+fn seq_bound(t: Fse&, k: i64, count: const i64[:]) -> i64 {
+    let most = (2 << t.log) - 1;
+    var bits = t.log;
+    for c, s in count {
+        guard c > 0 else { continue; }
+        let extra = if k == ZSTD_LL { LL_BITS[s] } else if k == ZSTD_ML { ML_BITS[s] } else { s };
+        bits += c * (((most + t.dnb[s]) >> 16) + extra);
+    }
+    return bits;
 }
 
 fn is_run(data: const u8[:]) -> bool {
@@ -660,18 +686,6 @@ fn fse_step(t: Fse&, v: i64, s: i64) -> i64, i64 {
     return n, t.next[(v >> n) + t.dfs[s]];
 }
 
-// Sequence i's extra bits: its literal length's, match length's, and
-// offset's, and how many of each.
-fn seq_extra(e: ZstdEncoder&, i: i64) -> u64, i64, u64, i64, u64, i64 {
-    let s = e.seqs[i];
-    let lc = e.llc[i] as i64;
-    let mc = e.mlc[i] as i64;
-    let oc = e.ofc[i] as i64;
-    return (s & 0xFFFFF) - LL_BASE[lc] as! u64, LL_BITS[lc],
-           ((s >> 20) & 0xFFFFF) - ML_BASE[mc] as! u64, ML_BITS[mc],
-           (s >> 40) - (1 << oc) as! u64, oc;
-}
-
 // The bits put_seqs writes with tables tl, to, and tm, the closing 1 bit
 // aside.
 fn seq_bits(e: ZstdEncoder&, tl: Fse&, to: Fse&, tm: Fse&) -> i64 {
@@ -693,6 +707,18 @@ fn seq_bits(e: ZstdEncoder&, tl: Fse&, to: Fse&, tm: Fse&) -> i64 {
         sl = vl;
     }
     return n;
+}
+
+// Sequence i's extra bits: its literal length's, match length's, and
+// offset's, and how many of each.
+fn seq_extra(e: ZstdEncoder&, i: i64) -> u64, i64, u64, i64, u64, i64 {
+    let s = e.seqs[i];
+    let lc = e.llc[i] as i64;
+    let mc = e.mlc[i] as i64;
+    let oc = e.ofc[i] as i64;
+    return (s & 0xFFFFF) - LL_BASE[lc] as! u64, LL_BITS[lc],
+           ((s >> 20) & 0xFFFFF) - ML_BASE[mc] as! u64, ML_BITS[mc],
+           (s >> 40) - (1 << oc) as! u64, oc;
 }
 
 // The sequences' bitstream (§3.1.1.3.2.1.2), which a decoder reads from its
