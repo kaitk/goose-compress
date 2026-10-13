@@ -126,90 +126,59 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
 
 ## Benchmarks
 
-Against libdeflate, zlib-ng, and libzstd, built in release mode, and klauspost/compress
-in Go: [docs/results.md](docs/results.md). On an M1 Pro, with seven Silesia files, at
-`ce13855`:
+The package is measured against libdeflate, zlib-ng, and libzstd, built in release
+mode, and klauspost/compress in Go. Each machine's full tables, setup, and method are in
+[docs/results.md](docs/results.md), and each change's measurements in
+[results-history.md](docs/results-history.md).
 
-- Level 0 stores at 2.8 GB/s (on `dickens` and `x-ray`), against zlib-ng's 7 GB/s and
-  libdeflate's 21-32 GB/s.
-  The gap is CRC-32, which both libraries compute with a carryless multiply that Goose
-  can't express ([findings](docs/goose-findings.md#goose-has-no-carryless-multiply)).
-- Level 1 compresses 120-393 MB/s, 1.05 to 1.5 times slower than zlib-ng and 1.2 to
-  1.5 times slower than libdeflate. Its output is smaller than zlib-ng's on all seven
-  files and 0.5 to 20 percent larger than libdeflate's.
-- Level 6 compresses 46-127 MB/s, 1.25 to 1.7 times slower than zlib-ng and 1.4 to
-  1.7 times slower than libdeflate, and faster than zlib-ng on `x-ray` (73 MB/s
-  against 65). Its output is smaller than zlib-ng's on five files, the same on one,
-  and 1 percent larger on `xml`; it's 0 to 4 percent larger than libdeflate's.
+gzip on a Ryzen 7 5800X3D under Windows 11, at `6b57c40`, over seven Silesia files[^1]:
 
-zstd on the same machine and files, at `237de3a`, against libzstd v1.5.7 and
-klauspost/compress v1.20.3 (`SpeedFastest` and `SpeedDefault`), all with the checksum:
+| Level | goose MB/s | libdeflate MB/s | zlib-ng MB/s | goose vs libdeflate | goose output vs libdeflate's |
+|---:|---:|---:|---:|---:|---:|
+| 0 | 2,639–2,833 | 12,859–19,144 | 14,214–17,252 | 4.9–7.0× slower[^2] | stored |
+| 1 | 139–386 | 164–651 | 157–888 | 1.17–1.69× slower | +0.6% to +20.3% |
+| 6 | 49–130 | 73–237 | 67–214 | 1.48–1.82× slower | +0.1% to +4.3% |
+| 9 | 19–67 | 31–102 | 27–80 | 1.37–2.07× slower | +0.1% to +4.5% |
 
-- Level 1 compresses 132-600 MB/s, 2.3 to 3.2 times slower than libzstd and 1.6 to 1.7
-  times slower than klauspost on six files; on `x-ray`, 1.2 and 3.8 times. Its
-  output on all 12 Silesia files is 2.2 percent smaller than libzstd's and 2.9 percent
-  smaller than klauspost's.
-- Level 3 compresses 114-430 MB/s, 1.7 to 2.3 times slower than libzstd and 1.4 to 1.9
-  times slower than klauspost. Its output is 4.2 percent larger than libzstd's, with
-  its 2 MB window, and 2.3 percent smaller with the same 128 KB window.
+[^1]: One-shot, the whole file in memory; each file's rate is the median of 10 runs, and
+    a cell gives the range over the seven files. DEFLATE speed is still being tuned:
+    task 005 ([tasks/005-parity.md](tasks/005-parity.md)) ports libdeflate's matcher to
+    reach its rate, and these numbers will change with it.
+[^2]: The level 0 gap is CRC-32, which both libraries compute with a carryless multiply
+    that Goose can't express
+    ([findings](docs/goose-findings.md#goose-has-no-carryless-multiply)).
 
-zstd's speed is still being improved. On `webster` at level 1, the package's matcher
-takes 2.1 times libzstd's time a byte, and the coding after it 4.3 times
-([profile](docs/results-history.md#zstd-against-libzstd-and-klauspost-task-004-step-6)),
-so the coding comes first. zstd hasn't been measured on the Ryzen yet.
+zstd on an M1 Pro, at `237de3a`, against libzstd v1.5.7 and klauspost/compress v1.20.3,
+all with the checksum[^3]:
 
-On a Ryzen 7 5800X3D under Windows, with the same files and output, at `43cb937`:
+| Level | goose MB/s | goose vs libzstd | goose vs klauspost | Output, 12 Silesia files |
+|---:|---:|---:|---:|---|
+| 1 | 132–600 | 2.3–3.2× slower | 1.6–1.7× slower | 2.2% smaller than libzstd's, 2.9% than klauspost's |
+| 3 | 114–430 | 1.7–2.3× slower | 1.4–1.9× slower | 4.2% larger than libzstd's (2.3% smaller at its 128 KB window) |
 
-- Level 1 compresses 130-379 MB/s, 1.2 to 2.3 times slower than zlib-ng and 1.2 to
-  1.7 times slower than libdeflate.
-- Level 6 compresses 48-124 MB/s, 1.2 to 1.7 times slower than zlib-ng and 1.6 to 2.0
-  times slower than libdeflate.
-- Level 0 zlib output, a copy and Adler-32 as a `simd fn` in AVX2, runs at 10-15 GB/s,
-  against zlib-ng's 20-43 GB/s and libdeflate's 16-25 GB/s.
+[^3]: Rates on six of seven files; on `x-ray` at level 1, 1.2 and 3.8 times slower.
+    zstd's speed is still being tuned: on `webster` at level 1 the coding takes 4.3
+    times libzstd's time a byte and the matcher 2.1 times
+    ([profile](docs/results-history.md#zstd-against-libzstd-and-klauspost-task-004-step-6)).
+    zstd hasn't been measured on the Ryzen yet.
 
 ## Credits
 
-No code is adopted from another encoder. The CRC-32 table and Adler-32's 5,552-byte
-run between reductions (zlib's `NMAX`) follow zlib and its RFCs. From zlib too: a block
-of at most 16,384 symbols (its default memory level), the choice among stored, fixed,
-and dynamic blocks by bit count with its tie-breaks, the way it limits code lengths to
-15 bits and gives a code at least two symbols, the zlib header's `FLEVEL` and gzip's
-`XFL` for each level, and the flush as `Z_SYNC_FLUSH`. The optimal code lengths come
-from Moffat and Katajainen's in-place algorithm ("In-Place Calculation of
-Minimum-Redundancy Codes", 1995). libdeflate
-([ebiggers/libdeflate](https://github.com/ebiggers/libdeflate)) and zlib-ng
-([zlib-ng/zlib-ng](https://github.com/zlib-ng/zlib-ng)) are the benchmark's DEFLATE
-competitors, and libzstd and klauspost/compress its zstd ones; when the package takes an idea from either, this section names it. From
-libdeflate: hash chains searched newest first, with a candidate's 4 hashed bytes and
-the byte at the best length compared before it's extended (`hc_matchfinder`); lazy
-and lazy2 matching, with its measure of a better match; each level's search depth,
-nice length, and lazy mode; loading the next position's hash bucket early, as its
-prefetch does, and carrying that position's hash to the next search, as its
-`next_hashes` do; and coding a block's symbols with 8-byte stores. XXH64 follows
-its specification in the xxHash repository (`Cyan4973/xxHash`, `doc/xxhash_spec.md`). CRC-32 by
-slice-by-16 is the common table method, not either library's. zstd's level 1 follows
-libzstd's `ZSTD_fast` (`facebook/zstd`): two positions probed a step, the last offset
-checked first, one byte of backward extension for it, the step that grows with the
-distance from the last match, the two positions it hashes after a match, and the
-offset before last tried at once; and its blocks of at most 128 KB matched whole, as
-its streaming API buffers them. The 6-byte hash and the 2^15-entry table are
-klauspost's `enc_fast.go` (`klauspost/compress`). Level 3 follows libzstd's
-`ZSTD_dfast` (`zstd_double_fast.c`) with its parameters for inputs up to 128 KB: a
-2^16-entry table of 8-byte hashes and a 2^15-entry table of 5-byte ones, each
-position checking the last offset one position on, then the long match, then the
-short one, which gives way to a longer long match at the next position; the step
-that grows by one every 256 bytes; and the four positions it hashes after a match.
-From libzstd's literals: one
-Huffman stream below 256 literals and four above, the guess that skips building a code
-for literals with no byte more common than 1/128 of them (`HUF_compress_internal`),
-counting bytes into 4 tables (`HIST_count_parallel`), and the weights' FSE accuracy of
-5 (`FSE_optimalTableLog`). From its sequences: the FSE coding table's form, a state
-table and two deltas a symbol (`FSE_buildCTable`), each table's accuracy
-(`FSE_optimalTableLog` again), and probabilities "less than 1" only in blocks of 2,048
-sequences and more (`ZSTD_useLowProbCount`); choosing each table by its estimated
-bits, where libzstd's fast levels use rules of thumb, is this package's. The block
-format, the predefined FSE tables, the Huffman weights, and the bitstreams' order
-come from RFC 8878.
+No code is adopted from another encoder. The package follows these designs, and
+[docs/credits.md](docs/credits.md) names what it takes from each:
+
+| Source | What the package follows |
+|---|---|
+| zlib, RFCs 1950 to 1952 | CRC-32 table, Adler-32's `NMAX`, block size and type choice, 15-bit code limit, header level fields, sync flush |
+| Moffat and Katajainen (1995) | Optimal Huffman code lengths, computed in place |
+| [libdeflate](https://github.com/ebiggers/libdeflate) | Hash-chain search, lazy matching, each level's parameters, 8-byte symbol stores |
+| [libzstd](https://github.com/facebook/zstd) | zstd levels 1 and 3 (`ZSTD_fast`, `ZSTD_dfast`), literals, FSE tables |
+| [klauspost/compress](https://github.com/klauspost/compress) | zstd level 1's 6-byte hash and table size |
+| xxHash specification | XXH64 |
+| RFC 8878 | zstd's block format, predefined tables, and bitstream order |
+
+libdeflate and [zlib-ng](https://github.com/zlib-ng/zlib-ng) are the benchmark's DEFLATE
+competitors, and libzstd and klauspost/compress its zstd ones.
 
 ## Layout
 
@@ -225,7 +194,7 @@ test/                unit tests, and encode.goose, which scripts/roundtrip.py dr
 scripts/             test scripts
 bench/               the C harness for libdeflate, zlib-ng, and libzstd, the Go one for
                      klauspost/compress, the Goose one, and scripts
-docs/                architecture, development setup, results, Goose findings
+docs/                architecture, development setup, results, Goose findings, credits
 tasks/               task tracking (tasks/README.md)
 ```
 
