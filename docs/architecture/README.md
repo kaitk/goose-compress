@@ -223,9 +223,9 @@ until the task named beside it confirms or replaces it.
   0.3251, against `zstd -3`'s 0.3124 with its 2 MB window and 0.3335 with a 128 KB one
   (`--zstd=wlog=17`). It's 2 to 24 percent slower than level 1 on six of seven files,
   and 80 percent slower on `x-ray`, where libzstd's level 3 is 70 percent slower than
-  its level 1 with one thread (step 6). A 2^17-entry long table, libzstd's for larger inputs, made the output
-  0.15 percent smaller for 256 KB more; a 6-byte short hash made it 2.0 percent larger,
-  and a 4-byte one left it the same as 5. The long table adds 262,144 bytes, for a
+  its level 1 with one thread (step 6). A 2^17-entry long table, libzstd's for larger
+  inputs, made the output 0.15 percent smaller for 256 KB more; a 6-byte short hash
+  made it 2.0 percent larger, and a 4-byte one left it the same as 5. The long table adds 262,144 bytes, for a
   `ZstdEncoder` of 879,875 (task 004 step 5, 2026-10-13,
   [results](../results-history.md#zstd-level-3-task-004-step-5)).
 - **A zstd `reset` keeps the hash tables.** Each stream's offsets start a window past

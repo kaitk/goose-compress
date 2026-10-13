@@ -2,7 +2,8 @@
 
 The package is Goose with no C, so it builds wherever the Goose compiler does. Tests and
 benchmarks have run on macOS and on Windows under Git Bash (2026-10-12); they need a
-POSIX shell, Python 3, and `gzip`, and should run unchanged on Linux.
+POSIX shell, Python 3, and `gzip`, and should run unchanged on Linux. The zstd benchmark
+needs Go too, and has run on macOS only (2026-10-13).
 
 ## Toolchain
 

@@ -6,10 +6,11 @@ flushes. Pure
 Goose, with no C ([architecture](docs/architecture/README.md)). Its first user is
 [goose-http](https://github.com/kaitk/goose-http), which compresses responses with it.
 
-Level 1 finds LZ77 matches with one hash probe a position; levels 2 to 9 search hash
-chains, and from level 5 match lazily, after libdeflate's design. Each block is coded
-with a dynamic Huffman code built from it, the fixed code, or stored, whichever is
-shortest.
+For DEFLATE, level 1 finds LZ77 matches with one hash probe a position; levels 2 to 9
+search hash chains, and from level 5 match lazily, after libdeflate's design. Each block
+is coded with a dynamic Huffman code built from it, the fixed code, or stored, whichever
+is shortest. For zstd, levels 1 and 3 follow libzstd's fast and double-fast matchers,
+and each block's literals and sequences are coded with tables chosen for it.
 
 ## Status
 
@@ -20,7 +21,7 @@ shortest.
 | 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.05 to 1.7 times slower than zlib-ng and libdeflate at levels 1 and 6 on an M1 Pro, 1.2 to 2.3 times on a Ryzen ([results](docs/results.md)). |
 | 🟢 | zlib (HTTP's `deflate`) | The same DEFLATE stream as gzip, with the zlib header and Adler-32. |
 | 🟢 | Raw DEFLATE | The same stream with no wrapper. |
-| 🟢 | zstd | Levels 1 and 3, libzstd's fast and double-fast matchers, into compressed blocks with Huffman literals and FSE tables chosen per block; levels 2 and up run level 3. Silesia comes to 0.3378 of its size at level 1 and 0.3251 at level 3, against libzstd's 0.3455 and 0.3121. 2.0 to 3.2 times slower than libzstd and 1.6 to 1.9 times slower than klauspost/compress on six files of seven, on an M1 Pro ([results](docs/results.md#zstd-levels-1-and-3-at-237de3a)). |
+| 🟢 | zstd | Levels 1 and 3, libzstd's fast and double-fast matchers, into compressed blocks with Huffman literals and FSE tables chosen per block; levels 2 and up run level 3. Silesia comes to 0.3378 of its size at level 1 and 0.3251 at level 3, against libzstd's 0.3455 and 0.3121. 2.0 to 3.2 times slower than libzstd and 1.6 to 1.9 times slower than klauspost/compress on six files of seven, on an M1 Pro ([results](docs/results.md#zstd-levels-1-and-3-at-237de3a)); speed is still being improved. |
 | 🔴 | Brotli | Out of scope: HTTP servers serve it precompressed (task 002). |
 | 🔴 | Decoding | Out of scope for now. |
 
@@ -28,8 +29,9 @@ shortest.
 |---|---|
 | 🟢 | One-shot `compress` |
 | 🟢 | Streaming `write`, `flush` (as zlib's `Z_SYNC_FLUSH`), and `finish` |
-| 🟢 | CRC-32 and Adler-32, continuing across calls |
-| 🟢 | Compression levels: 0 stores, 1 probes once, 2 to 4 search chains greedily, 5 to 9 lazily |
+| 🟢 | CRC-32, Adler-32, and XXH64, continuing across calls |
+| 🟢 | DEFLATE levels: 0 stores, 1 probes once, 2 to 4 search chains greedily, 5 to 9 lazily |
+| 🟢 | zstd levels: 1 runs the fast matcher, 2 to 22 the double-fast one |
 
 ## Quick start
 
@@ -47,6 +49,9 @@ fn main() {
     compress::flush(e, out);    // out now decompresses to "first chunk"
     compress::write(e, "second chunk", out);
     compress::finish(e, out);
+
+    var zs: u8[>..] = [];
+    compress::compress("hello, hello, hello", zs, compress::ZSTD, 3);   // one zstd frame
 }
 ```
 
@@ -148,6 +153,11 @@ klauspost/compress v1.20.3 (`SpeedFastest` and `SpeedDefault`), all with the che
   times slower than klauspost. Its output is 4.2 percent larger than libzstd's, with
   its 2 MB window, and 2.3 percent smaller with the same 128 KB window.
 
+zstd's speed is still being improved. On `webster` at level 1, the package's matcher
+takes 2.1 times libzstd's time a byte, and the coding after it 4.3 times
+([profile](docs/results-history.md#zstd-against-libzstd-and-klauspost-task-004-step-6)),
+so the coding comes first. zstd hasn't been measured on the Ryzen yet.
+
 On a Ryzen 7 5800X3D under Windows, with the same files and output, at `43cb937`:
 
 - Level 1 compresses 130-379 MB/s, 1.2 to 2.3 times slower than zlib-ng and 1.2 to
@@ -224,6 +234,7 @@ tasks/               task tracking (tasks/README.md)
 | What | Pin | Why |
 |---|---|---|
 | Goose compiler | `aardappel/goose` `a6249a4` (`master`, 2026-10-12) | The language and stdlib change often |
+| Benchmark libraries | libdeflate v1.26, zlib-ng 2.3.3, and libzstd v1.5.7 in `bench/build.sh`; klauspost/compress v1.20.3 in `bench/klauspost/go.mod` | Each result names the versions it ran against |
 
 Move the pin in its own commit, with the tests and results that still hold
 ([development.md](docs/development.md#move-the-pin)).
