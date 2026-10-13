@@ -1,7 +1,7 @@
 // The zstd frame (RFC 8878): a header declaring the window, blocks, and the
 // low 32 bits of the content's XXH64. A block is compressed (§3.1.1.3), with
 // its literals as zstd_literals.goose codes them and its sequences coded with
-// the predefined FSE tables, or raw or RLE where that's no larger.
+// FSE tables chosen for the block, or raw or RLE where that's no larger.
 namespace compress;
 
 import std;
@@ -65,6 +65,17 @@ struct ZstdEncoder {
     nseq: i64 = 0,
     matched: i64 = 0,
     seqs: u64[ZSTD_SEQ_MAX],
+    // Each sequence's literal length, offset, and match length codes.
+    llc: u8[ZSTD_SEQ_MAX],
+    ofc: u8[ZSTD_SEQ_MAX],
+    mlc: u8[ZSTD_SEQ_MAX],
+    // The tables a decoder holds for each kind of code, from the last block
+    // with sequences, which a block may repeat: kind k's at fse[2k + cur[k]],
+    // and the other slot free for the next block's. A frame has none until
+    // its first such block.
+    tables: bool = false,
+    cur: i64[3],
+    fse: Fse[6],
     win: u8[ZSTD_WIN_SIZE],
 }
 
@@ -93,6 +104,7 @@ fn reset(e: ZstdEncoder&, level: i64 = ZSTD_DEFAULT_LEVEL) {
     for &x in e.head { x = 0; }
     e.nseq = 0;
     e.matched = 0;
+    e.tables = false;
 }
 
 // A full block is held until more input comes, so the last block can carry
@@ -259,10 +271,29 @@ fn zstd_block(e: ZstdEncoder&, out: u8[>..]&, start: i64, end: i64, last: bool) 
         let seqs = e.seqs[..e.nseq];
         var l = ZstdLits { .. };
         plan_literals(seqs, data, data.len - e.matched, l);
-        let r0, r1, r2 = offset_values(e);
+        var count: i64[3 * FSE_SYMS] = [0; 3 * FSE_SYMS];
+        let r0, r1, r2 = code_seqs(e, count);
         let n = e.nseq;
         let sh = if n == 0 { 1 } else if n < 128 { 2 } else if n < 0x7F00 { 3 } else { 4 };
-        let size = l.size + sh + (if n > 0 { (seq_bits(e) + 1 + 7) / 8 } else { 0 });
+        var size = l.size + sh;
+        // Each kind's mode and description, and the slot of its table.
+        var mode: i64[3] = [0; 3];
+        var slot: i64[3] = [0; 3];
+        var desc: Bits[3] = [Bits { .. }; 3];
+        if n > 0 {
+            // The codes a coder starts in, the last sequence's.
+            let first = [e.llc[n - 1], e.ofc[n - 1], e.mlc[n - 1]];
+            for k in 3 {
+                let kc = count[k * FSE_SYMS..(k + 1) * FSE_SYMS];
+                mode[k] = plan_table(e, k, kc, first[k], desc[k]);
+                slot[k] = 2 * k + (if mode[k] == FSE_REPEAT { e.cur[k] } else { 1 - e.cur[k] });
+                size += desc[k].o;
+            }
+            let tl .= e.fse[slot[ZSTD_LL]];
+            let to .= e.fse[slot[ZSTD_OF]];
+            let tm .= e.fse[slot[ZSTD_ML]];
+            size += (seq_bits(e, tl, to, tm) + 1 + 7) / 8;
+        }
         if size < data.len {
             put_le24(out, size << 3 | ZSTD_COMPRESSED << 1 | (if last { 1 } else { 0 }));
             put_literals(seqs, out, data, l);
@@ -274,9 +305,14 @@ fn zstd_block(e: ZstdEncoder&, out: u8[>..]&, start: i64, end: i64, last: bool) 
                 out.append([0xFF, (n - 0x7F00) as! u8, ((n - 0x7F00) >> 8) as! u8]);
             }
             if n > 0 {
-                // Symbol_Compression_Modes: the predefined tables for all three.
-                out.push(0);
-                put_seqs(e, out);
+                out.push((mode[ZSTD_LL] << 6 | mode[ZSTD_OF] << 4 | mode[ZSTD_ML] << 2) as! u8);
+                for k in 3 {
+                    out.append(desc[k].buf[..desc[k].o]);
+                    e.cur[k] = slot[k] - 2 * k;
+                }
+                e.tables = true;
+                put_seqs(e, out, e.fse[slot[ZSTD_LL]], e.fse[slot[ZSTD_OF]],
+                         e.fse[slot[ZSTD_ML]]);
             }
             e.rep0 = r0;
             e.rep1 = r1;
@@ -294,12 +330,13 @@ fn is_run(data: const u8[:]) -> bool {
 
 // Replaces each sequence's distance with its offset value, as a decoder
 // tracks the repeat offsets from the last compressed block (§3.1.1.5), and
-// returns the repeat offsets after the block.
-fn offset_values(e: ZstdEncoder&) -> i64, i64, i64 {
+// returns the repeat offsets after the block. Sets each sequence's codes, and
+// counts each kind's at count[k * FSE_SYMS].
+fn code_seqs(e: ZstdEncoder&, count: i64[:]) -> i64, i64, i64 {
     var r0 = e.rep0;
     var r1 = e.rep1;
     var r2 = e.rep2;
-    for &s in e.seqs[..e.nseq] {
+    for &s, i in e.seqs[..e.nseq] {
         let lits = s & 0xFFFFF;
         let d = (s >> 40) as i64;
         var v = d + 3;
@@ -323,8 +360,95 @@ fn offset_values(e: ZstdEncoder&) -> i64, i64, i64 {
             r0 = d;
         }
         s = (s & 0xFFFFFFFFFF) | (v as! u64) << 40;
+        let lc = ll_code(lits as i64);
+        let oc = log2_zstd(v);
+        let mc = ml_code(((s >> 20) & 0xFFFFF) as i64 - 3);
+        e.llc[i] = lc as! u8;
+        e.ofc[i] = oc as! u8;
+        e.mlc[i] = mc as! u8;
+        count[lc]++;
+        count[FSE_SYMS + oc]++;
+        count[2 * FSE_SYMS + mc]++;
     }
     return r0, r1, r2;
+}
+
+// The kinds of a sequence's codes, in the order a block gives their modes
+// (§3.1.1.3.2.1): literal lengths, offsets, and match lengths. Each has a
+// predefined table, and a built one takes an accuracy of at most SEQ_LOG.
+let ZSTD_LL = 0;
+let ZSTD_OF = 1;
+let ZSTD_ML = 2;
+let SEQ_LOG = [9, 8, 9];
+
+// The modes a block codes each kind in (§3.1.1.3.2.1.1).
+let FSE_PREDEFINED = 0;
+let FSE_RLE = 1;
+let FSE_COMPRESSED = 2;
+let FSE_REPEAT = 3;
+
+// Chooses the table of kind k for the block's codes, of these counts, the
+// last sequence's being `first`: the predefined one, the last block's again,
+// an RLE table where there's one code, or one built from the counts,
+// whichever fse_cost says takes the fewest bits, its description included.
+// Builds it in the kind's free slot unless it's repeated, writes its
+// description to desc, and returns its mode.
+fn plan_table(e: ZstdEncoder&, k: i64, count: const i64[:], first: i64, desc: Bits&) -> i64 {
+    let pre .= ZSTD_PREDEF[k];
+    var mode = FSE_PREDEFINED;
+    var best = fse_cost(pre.norm[..pre.nsym], pre.log, count, first);
+    // The predefined table codes offsets below 2^29, past any window here.
+    assert(best >= 0);
+    if e.tables {
+        let t .= e.fse[2 * k + e.cur[k]];
+        let c = fse_cost(t.norm[..t.nsym], t.log, count, first);
+        if c >= 0 && c < best {
+            mode = FSE_REPEAT;
+            best = c;
+        }
+    }
+    var top = 0;
+    var kinds = 0;
+    var total = 0;
+    for c, s in count {
+        if c > 0 {
+            top = s;
+            kinds++;
+            total += c;
+        }
+    }
+    var norm: i64[FSE_SYMS] = [0; FSE_SYMS];
+    var log = 0;
+    if kinds == 1 {
+        // One byte, the code.
+        if 8 << 8 < best {
+            mode = FSE_RLE;
+            norm[top] = 1;
+        }
+    } else {
+        // libzstd's FSE_optimalTableLog: fewer states for fewer codes, but
+        // enough for each code to take one.
+        let least = min(log2(total) + 1, log2(top) + 2);
+        log = max(max(min(SEQ_LOG[k], log2(total - 1) - 2), least), 5);
+        // Large blocks, as libzstd's ZSTD_useLowProbCount.
+        fse_normalize(count[..top + 1], total, log, norm[..top + 1], total >= 2048);
+        var b = Bits { .. };
+        put_fse_header(b, norm[..top + 1], log);
+        let c = (b.o << 11) + fse_cost(norm[..top + 1], log, count, first);
+        if c < best {
+            mode = FSE_COMPRESSED;
+            desc = b;
+        }
+    }
+    guard mode != FSE_REPEAT else { return mode; }
+    let t .= e.fse[2 * k + 1 - e.cur[k]];
+    if mode == FSE_PREDEFINED {
+        t = pre;
+    } else {
+        fse_build(t, norm[..top + 1], log);
+        if mode == FSE_RLE { bits_put(desc, top, 8); }
+    }
+    return mode;
 }
 
 // Literal lengths and match lengths as codes with extra bits (§3.1.1.3.2.1.1):
@@ -380,37 +504,46 @@ let ML_NORM = [1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                -1, -1, -1, -1];
 let OF_NORM = [1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1,
                -1, -1, -1, -1];
-let LL_FSE = fse_table(LL_NORM, 6);
-let ML_FSE = fse_table(ML_NORM, 6);
-let OF_FSE = fse_table(OF_NORM, 5);
+let ZSTD_PREDEF = [fse_table(LL_NORM, 6), fse_table(OF_NORM, 5), fse_table(ML_NORM, 6)];
 
-// One sequence's codes and extra bits: the literal length's, the match
-// length's, and the offset's.
-fn seq_codes(s: u64) -> i64, i64, i64, i64, i64, i64 {
-    let lits = (s & 0xFFFFF) as i64;
-    let x = (((s >> 20) & 0xFFFFF) as i64) - 3;
-    let v = (s >> 40) as i64;
-    let lc = ll_code(lits);
-    let mc = ml_code(x);
-    let oc = log2_zstd(v);
-    return lc, lits - LL_BASE[lc], mc, x + 3 - ML_BASE[mc], oc, v - (1 << oc);
+// Codes symbol s before state v of t: the bits it writes, v's low ones, and
+// the state it moves to.
+fn fse_step(t: Fse&, v: i64, s: i64) -> i64, i64 {
+    let n = (v + t.dnb[s]) >> 16;
+    return n, t.next[(v >> n) + t.dfs[s]];
 }
 
-// The bits put_seqs writes, the closing 1 bit aside.
-fn seq_bits(e: ZstdEncoder&) -> i64 {
+// Sequence i's extra bits: its literal length's, match length's, and
+// offset's, and how many of each.
+fn seq_extra(e: ZstdEncoder&, i: i64) -> u64, i64, u64, i64, u64, i64 {
+    let s = e.seqs[i];
+    let lc = e.llc[i] as i64;
+    let mc = e.mlc[i] as i64;
+    let oc = e.ofc[i] as i64;
+    return (s & 0xFFFFF) - LL_BASE[lc] as! u64, LL_BITS[lc],
+           ((s >> 20) & 0xFFFFF) - ML_BASE[mc] as! u64, ML_BITS[mc],
+           (s >> 40) - (1 << oc) as! u64, oc;
+}
+
+// The bits put_seqs writes with tables tl, to, and tm, the closing 1 bit
+// aside.
+fn seq_bits(e: ZstdEncoder&, tl: Fse&, to: Fse&, tm: Fse&) -> i64 {
     var i = e.nseq - 1;
-    let lc, lx, mc, mx, oc, ox = seq_codes(e.seqs[i]);
-    var sl = LL_FSE.enc[lc * 64];
-    var sm = ML_FSE.enc[mc * 64];
-    var so = OF_FSE.enc[oc * 64];
-    var n = 6 + 6 + 5 + LL_BITS[lc] + ML_BITS[mc] + oc;
-    while i > 0 {
+    var sl = fse_first(tl, e.llc[i]);
+    var so = fse_first(to, e.ofc[i]);
+    var sm = fse_first(tm, e.mlc[i]);
+    var n = tl.log + to.log + tm.log;
+    loop {
+        n += LL_BITS[e.llc[i]] + ML_BITS[e.mlc[i]] + e.ofc[i];
+        guard i > 0 else { break; }
         i--;
-        let lc1, lx1, mc1, mx1, oc1, ox1 = seq_codes(e.seqs[i]);
-        so = OF_FSE.enc[oc1 * 64 + so];
-        sm = ML_FSE.enc[mc1 * 64 + sm];
-        sl = LL_FSE.enc[lc1 * 64 + sl];
-        n += OF_FSE.nb[so] + ML_FSE.nb[sm] + LL_FSE.nb[sl] + LL_BITS[lc1] + ML_BITS[mc1] + oc1;
+        let no, vo = fse_step(to, so, e.ofc[i]);
+        let nm, vm = fse_step(tm, sm, e.mlc[i]);
+        let nl, vl = fse_step(tl, sl, e.llc[i]);
+        n += no + nm + nl;
+        so = vo;
+        sm = vm;
+        sl = vl;
     }
     return n;
 }
@@ -420,53 +553,48 @@ fn seq_bits(e: ZstdEncoder&) -> i64 {
 // writes the states its decoder moves on by, offset's first, then its extra
 // bits, the literal length's first, and the first sequence's states close it,
 // the literal length's last, then a 1 bit. A sequence's bits are written to
-// a buffer in two parts, each under 57 bits, and the whole bytes kept.
-fn put_seqs(e: ZstdEncoder&, out: u8[>..]&) {
-    // A sequence writes up to 14 bytes before the buffer is checked.
+// a buffer in two parts, the states and the literal length's extra bits, then
+// the rest, each under 57 bits, and the whole bytes kept.
+fn put_seqs(e: ZstdEncoder&, out: u8[>..]&, tl: Fse&, to: Fse&, tm: Fse&) {
+    // A sequence writes up to 12 bytes before the buffer is checked.
     var buf: u8[STAGE + 16] = [0; STAGE + 16];
     var o = 0;
-    var bits: u64 = 0;
-    var nbits = 0;
     var i = e.nseq - 1;
-    let lc, lx, mc, mx, oc, ox = seq_codes(e.seqs[i]);
-    var sl = LL_FSE.enc[lc * 64];
-    var sm = ML_FSE.enc[mc * 64];
-    var so = OF_FSE.enc[oc * 64];
-    bits = lx as! u64;
-    nbits = LL_BITS[lc];
-    bits |= (mx as! u64) << nbits;
-    nbits += ML_BITS[mc];
-    bits |= (ox as! u64) << nbits;
-    nbits += oc;
+    var sl = fse_first(tl, e.llc[i]);
+    var so = fse_first(to, e.ofc[i]);
+    var sm = fse_first(tm, e.mlc[i]);
+    let lx, ln, mx, mn, ox, on = seq_extra(e, i);
+    var bits = lx | mx << ln | ox << (ln + mn);
+    var nbits = ln + mn + on;
     put_le64(buf[o..o + 8], bits);
     o += nbits >> 3;
     bits >>= nbits & ~7;
     nbits &= 7;
     while i > 0 {
         i--;
-        let lc1, lx1, mc1, mx1, oc1, ox1 = seq_codes(e.seqs[i]);
-        let to = OF_FSE.enc[oc1 * 64 + so];
-        bits |= ((so - OF_FSE.base[to]) as u64) << nbits;
-        nbits += OF_FSE.nb[to];
-        so = to;
-        let tm = ML_FSE.enc[mc1 * 64 + sm];
-        bits |= ((sm - ML_FSE.base[tm]) as u64) << nbits;
-        nbits += ML_FSE.nb[tm];
-        sm = tm;
-        let tl = LL_FSE.enc[lc1 * 64 + sl];
-        bits |= ((sl - LL_FSE.base[tl]) as u64) << nbits;
-        nbits += LL_FSE.nb[tl];
-        sl = tl;
-        bits |= (lx1 as! u64) << nbits;
-        nbits += LL_BITS[lc1];
-        bits |= (mx1 as! u64) << nbits;
-        nbits += ML_BITS[mc1];
+        let no, vo = fse_step(to, so, e.ofc[i]);
+        bits |= ((so & ((1 << no) - 1)) as! u64) << nbits;
+        nbits += no;
+        so = vo;
+        let nm, vm = fse_step(tm, sm, e.mlc[i]);
+        bits |= ((sm & ((1 << nm) - 1)) as! u64) << nbits;
+        nbits += nm;
+        sm = vm;
+        let nl, vl = fse_step(tl, sl, e.llc[i]);
+        bits |= ((sl & ((1 << nl) - 1)) as! u64) << nbits;
+        nbits += nl;
+        sl = vl;
+        let lx1, ln1, mx1, mn1, ox1, on1 = seq_extra(e, i);
+        bits |= lx1 << nbits;
+        nbits += ln1;
         put_le64(buf[o..o + 8], bits);
         o += nbits >> 3;
         bits >>= nbits & ~7;
         nbits &= 7;
-        bits |= (ox1 as! u64) << nbits;
-        nbits += oc1;
+        bits |= mx1 << nbits;
+        nbits += mn1;
+        bits |= ox1 << nbits;
+        nbits += on1;
         put_le64(buf[o..o + 8], bits);
         o += nbits >> 3;
         bits >>= nbits & ~7;
@@ -476,12 +604,12 @@ fn put_seqs(e: ZstdEncoder&, out: u8[>..]&) {
             o = 0;
         }
     }
-    bits |= (sm as u64) << nbits;
-    nbits += 6;
-    bits |= (so as u64) << nbits;
-    nbits += 5;
-    bits |= (sl as u64) << nbits;
-    nbits += 6;
+    bits |= ((sm & ((1 << tm.log) - 1)) as! u64) << nbits;
+    nbits += tm.log;
+    bits |= ((so & ((1 << to.log) - 1)) as! u64) << nbits;
+    nbits += to.log;
+    bits |= ((sl & ((1 << tl.log) - 1)) as! u64) << nbits;
+    nbits += tl.log;
     bits |= (1 as u64) << nbits;
     nbits++;
     put_le64(buf[o..o + 8], bits);

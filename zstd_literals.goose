@@ -212,24 +212,30 @@ fn put_weights_fse(w: const u8[:], b: Bits&) -> bool {
     var syms = 12;
     while norm[syms - 1] == 0 { syms--; }
     put_fse_header(b, norm[..syms], log);
-    var f = FseWeights { .. };
-    fse_build(&f, norm[..syms], log);
+    var f = Fse { .. };
+    fse_build(f, norm[..syms], log);
     // A decoder knows it has every weight when moving on from the state the
     // second to last leaves it in reads past the stream, so that state must
-    // read a bit. The state covering t = size - 1 reads the most.
+    // read a bit. The one that codes it before a decoder's last state reads
+    // the most.
+    let size = 1 << log;
     var st: i64[2] = [0; 2];
-    st[(n - 1) & 1] = f.enc[(w[n - 1] as i64) * 64];
-    st[(n - 2) & 1] = f.enc[(w[n - 2] as i64) * 64 + (1 << log) - 1];
+    st[(n - 1) & 1] = fse_first(f, w[n - 1]);
+    let last = 2 * size - 1;
+    let w2 = w[n - 2] as i64;
+    st[(n - 2) & 1] = f.next[(last >> ((last + f.dnb[w2]) >> 16)) + f.dfs[w2]];
     var i = n - 3;
     while i >= 0 {
         let c = i & 1;
-        let u: i64 = f.enc[(w[i] as i64) * 64 + st[c]];
-        bits_put(b, st[c] - f.base[u], f.nb[u]);
-        st[c] = u;
+        let s = w[i] as i64;
+        let v = st[c];
+        let nb = (v + f.dnb[s]) >> 16;
+        bits_put(b, v & ((1 << nb) - 1), nb);
+        st[c] = f.next[(v >> nb) + f.dfs[s]];
         i--;
     }
-    bits_put(b, st[1], log);
-    bits_put(b, st[0], log);
+    bits_put(b, st[1] - size, log);
+    bits_put(b, st[0] - size, log);
     bits_put(b, 1, 1);
     bits_end(b);
     return true;

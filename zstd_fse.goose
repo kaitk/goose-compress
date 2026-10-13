@@ -3,87 +3,111 @@
 namespace compress;
 
 import std;
+import math;
 import .deflate;
 
-// An FSE table, for coding: for each state, the bits a decoder reads to move
-// on from it and the baseline they're added to; for each symbol s and state t
-// a decoder moves on to, the state of s it moves from, at enc[s * 64 + t].
-struct Fse {
-    log: i64,
-    nb: u8[64],
-    base: u16[64],
-    enc: u16[53 * 64],
-}
+// The most symbols a table codes, match lengths' 53, and the largest table,
+// 2^9 states.
+let FSE_SYMS = 53;
+let FSE_STATES = 512;
 
-// The same for the 12 weights of a Huffman code, small enough to build for
-// each block.
-struct FseWeights {
-    log: i64,
-    nb: u8[64],
-    base: u16[64],
-    enc: u16[12 * 64],
+// An FSE table for coding, in libzstd's form (FSE_buildCTable). A coder's
+// state is size + t, where t is the state a decoder is in after the symbols
+// coded so far. To code symbol s before them, it writes the low
+// (state + dnb[s]) >> 16 bits of the state, n, and moves to
+// next[(state >> n) + dfs[s]]: size plus the state that decodes s and reads
+// those bits. A table of accuracy 0 codes one symbol in no bits, as an RLE
+// mode does.
+struct Fse {
+    log: i64 = 0,
+    // The distribution, of nsym symbols; -1 is a probability "less than 1".
+    nsym: i64 = 0,
+    norm: i64[FSE_SYMS],
+    dnb: i32[FSE_SYMS],
+    dfs: i32[FSE_SYMS],
+    next: u16[FSE_STATES],
 }
 
 fn fse_table(norm: const i64[:], log: i64) -> Fse {
     var f = Fse { .. };
-    fse_build(&f, norm, log);
+    fse_build(f, norm, log);
     return f;
 }
 
-// Builds the decoding table of a distribution into f, a reference to an Fse
-// or an FseWeights, as §4.1.1 does, and from it the coding one. An untyped
-// parameter takes a copy of a struct, so callers pass &f.
-fn fse_build(f, norm: const i64[:], log: i64) {
+// Builds f from a distribution of 2^log, spreading its symbols over the
+// states as a decoder does (§4.1.1).
+fn fse_build(f: Fse&, norm: const i64[:], log: i64) {
     let size = 1 << log;
     f.log = log;
-    var sym: i64[64] = [0; 64];
+    f.nsym = norm.len;
+    var sym: u8[FSE_STATES] = [0; FSE_STATES];
+    // Where each symbol's states start in next, in the order a decoder
+    // numbers them.
+    var at: i64[FSE_SYMS + 1] = [0; FSE_SYMS + 1];
     // "Less than 1" symbols take a state each from the end, the rest are
     // spread over the others.
     var high = size - 1;
     for p, s in norm {
+        f.norm[s] = p;
         if p == -1 {
-            sym[high] = s;
+            sym[high] = s as! u8;
             high--;
         }
+        at[s + 1] = at[s] + abs(p);
     }
     let step = (size >> 1) + (size >> 3) + 3;
-    var at = 0;
+    var u = 0;
     for p, s in norm {
         for i in max(p, 0) {
-            sym[at] = s;
-            at = (at + step) & (size - 1);
-            while at > high { at = (at + step) & (size - 1); }
+            sym[u] = s as! u8;
+            u = (u + step) & (size - 1);
+            while u > high { u = (u + step) & (size - 1); }
         }
     }
-    var next: i64[53] = [0; 53];
-    for p, s in norm { next[s] = if p == -1 { 1 } else { p }; }
-    for u in size {
-        let s = sym[u];
-        let x = next[s];
-        next[s]++;
-        let nb = log - LOG2[x];
-        let base = (x << nb) - size;
-        f.nb[u] = nb as! u8;
-        f.base[u] = base as! u16;
-        for t in base..base + (1 << nb) { f.enc[s * 64 + t] = u as! u16; }
+    // A symbol of probability p reads log - k or log - k + 1 bits, where 2^k
+    // is the highest power of two below p, the fewer from the states below
+    // p << (log - k).
+    for p, s in norm {
+        if p == -1 || p == 1 {
+            f.dnb[s] = ((log << 16) - size) as! i32;
+            f.dfs[s] = (at[s] - 1) as! i32;
+        } else if p > 1 {
+            let most = log - log2(p - 1);
+            f.dnb[s] = ((most << 16) - (p << most)) as! i32;
+            f.dfs[s] = (at[s] - p) as! i32;
+        }
     }
+    for t in size {
+        let s = sym[t];
+        f.next[at[s]] = (size + t) as! u16;
+        at[s]++;
+    }
+}
+
+// A coder's first state for symbol s, which a stream ends with whole, so any
+// of s's would do: the one that codes s before a decoder's state 0.
+fn fse_first(f: Fse&, s: i64) -> i64 {
+    let v = 1 << f.log;
+    return f.next[(v >> ((v + f.dnb[s]) >> 16)) + f.dfs[s]];
 }
 
 // Sets norm to a distribution of 2^log for the counts, which sum to total:
 // each counted symbol gets at least 1, and the rest goes where it saves the
 // most bits, a symbol's share of them being about its count over its
-// probability.
-fn fse_normalize(count: const i64[:], total: i64, log: i64, norm: i64[:]) {
+// probability. With `low`, a symbol whose share is at most 1 is "less than
+// 1", -1, as libzstd's FSE_normalizeCount makes them for large blocks.
+fn fse_normalize(count: const i64[:], total: i64, log: i64, norm: i64[:], low: bool = false) {
     let size = 1 << log;
     var sum = 0;
     for c, s in count {
-        norm[s] = if c == 0 { 0 } else { max(1, c * size / total) };
-        sum += norm[s];
+        norm[s] = if c == 0 { 0 } else if low && c * size <= total { -1 }
+                  else { max(1, (2 * c * size + total) / (2 * total)) };
+        sum += abs(norm[s]);
     }
     while sum < size {
         var best = -1;
         for c, s in count {
-            if c > 0 && (best < 0 || c * norm[best] > count[best] * norm[s]) { best = s; }
+            if norm[s] > 0 && (best < 0 || c * norm[best] > count[best] * norm[s]) { best = s; }
         }
         norm[best]++;
         sum++;
@@ -99,6 +123,29 @@ fn fse_normalize(count: const i64[:], total: i64, log: i64, norm: i64[:]) {
         norm[best]--;
         sum--;
     }
+}
+
+// 256 log2(x), rounded, for probabilities up to the largest table's.
+let FSE_COST = fse_cost_tab();
+
+fn fse_cost_tab() -> i64[FSE_STATES + 1] {
+    var t: i64[FSE_STATES + 1] = [0; FSE_STATES + 1];
+    for x in 1..FSE_STATES + 1 { t[x] = (::log2(x as f64) * 256.0 + 0.5) as i64; }
+    return t;
+}
+
+// About how many bits, in 1/256ths, a distribution of 2^log codes the counts
+// in, the last state included: a symbol of probability p takes log2(2^log / p),
+// but for one of `first`, which a coder starts in a state of. -1 where it has
+// no probability for a counted symbol.
+fn fse_cost(norm: const i64[:], log: i64, count: const i64[:], first: i64) -> i64 {
+    var bits = log << 8;
+    for c, s in count {
+        guard c > 0 else { continue; }
+        guard s < norm.len && norm[s] != 0 else { return -1; }
+        bits += c * ((log << 8) - FSE_COST[abs(norm[s])]);
+    }
+    return bits - ((log << 8) - FSE_COST[abs(norm[first])]);
 }
 
 // A distribution's description (§4.1.1): the accuracy log, then each

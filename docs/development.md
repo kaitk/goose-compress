@@ -77,9 +77,12 @@ program that imports both builds with one compiler.
    32,768, and that a stream's bytes don't depend on how its input was split across
    writes, at levels 0, 1, 2, 6, and 9. Each exact-byte stream at level 1 and up was
    checked by decompressing it with Python's `zlib`. For zstd, it checks XXH64 against
-   known values, and the exact bytes of empty, raw, RLE, and three compressed blocks:
-   two with sequences, the second across a flush with a repeat offset, and one of
-   Huffman literals alone. Each was checked with `zstd -d` and `compression.zstd`.
+   known values, and the exact bytes of empty, raw, RLE, and compressed blocks: two
+   with sequences and the predefined tables, the second across a flush with a repeat
+   offset; one of Huffman literals alone; and two across a flush, the first building
+   its literal length and offset tables and the second repeating them. Each was checked
+   with `zstd -d` and `compression.zstd`. After `reset`, a stream must come out as
+   from a new encoder, with no table to repeat.
 3. `goose build` of `test/encode.goose` into `build/encode`, a command that compresses
    a file at a level, one-shot or by a plan of writes and flushes.
 4. `scripts/roundtrip.py`: `build/encode` on each input in gzip, zlib, and raw DEFLATE,
@@ -94,25 +97,30 @@ program that imports both builds with one compiler.
    random bytes with runs copied from up to 40 KB back, 16,000 bytes whose optimal
    Huffman code needs 17 bits, bytes that repeat at 131,071 and 131,072, at the edge of
    zstd's window and past it, 5-byte words with a random byte between, which fill
-   a zstd block's 16,384 sequences, and skewed bytes of nearly every value, which zstd
-   codes with 11-bit Huffman codes and FSE-coded weights. The plans write in 257-byte pieces, which end
+   a zstd block's 16,384 sequences, skewed bytes of nearly every value, which zstd
+   codes with 11-bit Huffman codes and FSE-coded weights, and 440,000 bytes of text,
+   short matches, JSON, skewed bytes, and copies in turn, whose zstd blocks change
+   statistics. The plans write in 257-byte pieces, which end
    inside matches, and flush every 1,000 and every 32,769 bytes, so matches run across
    writes and flushes. One-shot at level 1 and up, inputs that repeat must compress
    below a limit set for each, a few percent above what level 1 reaches, in DEFLATE
    and in zstd; text, JSON, and the copies within 40 KB have a tighter DEFLATE limit
    from level 6, a few percent above what level 6 reaches. The script then reads back
    the header of the 17-bit input's block: its literal/length code must reach exactly
-   15 bits and be complete. A fuzz run of 200 random inputs, levels, and plans follows,
+   15 bits and be complete. It reads back the changing input's zstd frames too, block
+   by block: one-shot, some must build sequence tables; flushed every 1,000 bytes,
+   some must repeat the last block's; and the two must take all four table modes
+   between them. A fuzz run of 200 random inputs, levels, and plans follows,
    with seed 0; `--levels`, `--zstd-levels`, `--fuzz N`, and `--seed S` change them.
 
 ```sh
 GOOSE=../goose/build-macos/goose scripts/test.sh
 ```
 
-It took about 36 s on the M1 Pro (2026-10-13) and 51 s on the Ryzen under Git Bash,
+It took about 48 s on the M1 Pro (2026-10-13) and 51 s on the Ryzen under Git Bash,
 where starting a process costs more (2026-10-12, before zstd's tests). A program run
 through TinyCC compiles at `-O1` without a C compiler, so the unit tests start fast;
-`encode` is built with `goose build` because `roundtrip.py` runs it 3,723 times.
+`encode` is built with `goose build` because `roundtrip.py` runs it 3,880 times.
 
 To try one stream by hand:
 
@@ -193,7 +201,9 @@ build/bench/bench 6 build/bench/corpus/mozilla 20 & sleep 1; sample bench 4 -fil
 - Integer literals are decimal or `0x` hex; there is no `0b`.
 - `match` takes integer constants only, so strings are compared with `if`/`else if`.
 - `args()`, `read_file`, and the other `os` functions need `import os;` even though
-  their names are global.
+  their names are global. Likewise `log2`, `sqrt`, and the other float functions need
+  `import math;`. The package's own `log2`, of an `i64`, hides std's in namespace
+  `compress`: write `::log2(x)` for the float one.
 - `bench/run.sh` sets `LC_ALL=C`: under a locale with a decimal comma, such as
   `et_EE`, awk prints `10,2` and the table's numbers break.
 - A rebuilt zlib-ng keeps options from its CMake cache: delete `build/bench/zlib-ng`

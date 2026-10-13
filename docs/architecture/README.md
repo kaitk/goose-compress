@@ -192,7 +192,8 @@ until the task named beside it confirms or replaces it.
   step 2, 2026-10-13).
 - **A zstd block ends at 16,384 sequences**, which takes 131,072 bytes of `u64`
   entries; 32,768 would never end a block early, at 4 bytes a match. An early end
-  costs another block's headers, a few bytes while the tables are predefined. No block
+  costs another block's headers, a few bytes, since the next block can repeat its
+  FSE tables. No block
   of the 12 Silesia files reaches it at level 1, the most being `mozilla`'s 15,263;
   `roundtrip.py`'s input of a sequence every 6 bytes reaches it in its second block
   (task 004 step 2, 2026-10-13).
@@ -226,6 +227,25 @@ until the task named beside it confirms or replaces it.
   no buffer of literals or coded bytes is held: each stream is written by walking the
   sequences back from where it ends. A literals buffer would add 128 KB to each
   `ZstdEncoder` (task 004 step 3, 2026-10-13).
+- **Each kind of zstd sequence code takes the table its block codes in the fewest
+  bits**: one built from the block's counts, the predefined one, an RLE table for one
+  code, or the last block's repeated. Each is priced at log2(2^accuracy / probability)
+  bits a code, from a table of 256ths, plus its description; the block's size is then
+  counted exactly with the tables chosen. libzstd's fast levels choose by rules of
+  thumb instead (`ZSTD_selectEncodingType`). Built tables take libzstd's accuracy,
+  at most 9, 8, and 9 for literal lengths, offsets, and match lengths. Silesia's
+  output went from 0.3768 of its input to 0.3378, below `zstd -1`'s 0.3457, for 2
+  percent of the rate or less (task 004 step 4, 2026-10-13,
+  [results](../results-history.md#zstd-fse-tables-per-block-task-004-step-4)).
+- **A `ZstdEncoder` holds two table slots for each kind of code**: the decoder's
+  table, which a block can repeat, and one the block builds into, which becomes the
+  decoder's only when the block is written compressed. Repeat mode carries across
+  flushes, and `reset` starts a frame with no table to repeat. Tables are in
+  libzstd's coding form, a state table and two deltas a symbol, 1,888 bytes at
+  accuracy 9; the decoding form indexed by symbol and state that step 2 used would
+  take 54 KB a table at that accuracy. Each sequence's three codes are kept, 48 KB,
+  so they're computed once for counting, sizing, and writing (task 004 step 4,
+  2026-10-13).
 
 ## Proposed
 

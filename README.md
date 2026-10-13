@@ -20,7 +20,7 @@ shortest.
 | 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.05 to 1.7 times slower than zlib-ng and libdeflate at levels 1 and 6 on an M1 Pro, 1.2 to 2.3 times on a Ryzen ([results](docs/results.md)). |
 | 🟢 | zlib (HTTP's `deflate`) | The same DEFLATE stream as gzip, with the zlib header and Adler-32. |
 | 🟢 | Raw DEFLATE | The same stream with no wrapper. |
-| 🟡 | zstd | Level 1 matching into compressed blocks, with Huffman literals and the predefined FSE tables; every level runs it. FSE tables per block and level 3 are next (task 004). |
+| 🟡 | zstd | Level 1 matching into compressed blocks, with Huffman literals and FSE tables chosen per block; every level runs it. Silesia comes to 0.3378 of its size, against `zstd -1`'s 0.3457. Level 3 is next (task 004). |
 | 🔴 | Brotli | Out of scope: HTTP servers serve it precompressed (task 002). |
 | 🔴 | Decoding | Out of scope for now. |
 
@@ -95,17 +95,20 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
 - **`compress::zstd_encoder(level = 3)`**: a zstd stream, `compress::ZstdEncoder`,
   with zstd's levels 1 to 22, each running level 1 for now: libzstd's fast matcher,
   with each block's literals Huffman coded from its counts, RLE, or raw, whichever is
-  shortest, and its sequences coded with the predefined FSE tables. A block is
-  compressed where that's smaller, else raw, or RLE for one repeated byte.
+  shortest, and its sequences' three kinds of codes each coded with an FSE table
+  built from the block's counts, the predefined table, an RLE table, or the last
+  block's table repeated, whichever is shortest. A block is compressed where that's
+  smaller, else raw, or RLE for one repeated byte.
   `compress::compress(data, out, compress::ZSTD, level)` takes the same levels. It
   overloads `reset(e, level)`, `write`, `flush`, and `finish`, which keep the contracts
   above, except that `flush` writes the input held as blocks and nothing
-  more: zstd blocks end on a byte boundary. The frame declares a 128 KB window, which
+  more: zstd blocks end on a byte boundary. Tables repeat across flushes, and `reset`
+  starts a frame with none. The frame declares a 128 KB window, which
   matches reach across writes and flushes, and ends with the low 32 bits of the
-  input's XXH64. A `ZstdEncoder` is a fixed-size value of 557,232 bytes: the window,
-  a 128 KB block, and 32 KB to slide by, a 128 KB hash table, and 128 KB of sequences.
-  Its `reset` clears only the hash table; `compress` of 100 bytes takes 3.5 µs on an
-  M1 Pro.
+  input's XXH64. A `ZstdEncoder` is a fixed-size value of 617,727 bytes: the window,
+  a 128 KB block, and 32 KB to slide by, a 128 KB hash table, 128 KB of sequences and
+  48 KB of their codes, and 11 KB of FSE tables. Its `reset` clears only the hash
+  table; `compress` of 100 bytes takes 3.6 µs on an M1 Pro.
 - **`compress::crc32(crc, data)`** and **`compress::adler32(adler, data)`**: the
   checksums, continuing from a previous value. Start CRC-32 at 0 and Adler-32 at 1.
   **`compress::xxh64(data)`** is XXH64 with seed 0; `compress::Xxh64 { .. }`,
@@ -167,8 +170,13 @@ klauspost's `enc_fast.go` (`klauspost/compress`). From libzstd's literals: one
 Huffman stream below 256 literals and four above, the guess that skips building a code
 for literals with no byte more common than 1/128 of them (`HUF_compress_internal`),
 counting bytes into 4 tables (`HIST_count_parallel`), and the weights' FSE accuracy of
-5 (`FSE_optimalTableLog`). The block format, the predefined FSE tables, the Huffman
-weights, and the bitstreams' order come from RFC 8878.
+5 (`FSE_optimalTableLog`). From its sequences: the FSE coding table's form, a state
+table and two deltas a symbol (`FSE_buildCTable`), each table's accuracy
+(`FSE_optimalTableLog` again), and probabilities "less than 1" only in blocks of 2,048
+sequences and more (`ZSTD_useLowProbCount`); choosing each table by its estimated
+bits, where libzstd's fast levels use rules of thumb, is this package's. The block
+format, the predefined FSE tables, the Huffman weights, and the bitstreams' order
+come from RFC 8878.
 
 ## Layout
 

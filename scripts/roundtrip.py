@@ -9,8 +9,9 @@ zstd output through `zstd -dc`. At each
 flush, the output so far must decompress to exactly the input written so far.
 Inputs that repeat must come out smaller than a limit, one-shot at level 1 and
 up, and in zstd. An input whose optimal Huffman code needs more than 15 bits must get a
-dynamic code of exactly 15. Then a fuzz run of random inputs, levels, and
-plans, seeded for repeatability.
+dynamic code of exactly 15. An input whose statistics change must take each of
+zstd's sequence table modes, built and repeated ones among them. Then a fuzz run
+of random inputs, levels, and plans, seeded for repeatability.
 
     scripts/roundtrip.py [ENCODE] [--levels 0,1,2,6,9] [--zstd-levels 1,3]
                          [--fuzz N] [--seed S]
@@ -132,6 +133,15 @@ def short_matches(r, n):
     return bytes(out[:n])
 
 
+def changing(r):
+    """Text, short matches, JSON, skewed bytes, and copies, 40 to 60 KB each,
+    twice over: blocks whose sequences change, so zstd builds tables for some
+    and repeats the last block's for others."""
+    parts = [text(40_000), short_matches(r, 40_000), json_doc()[:40_000],
+             skewed(r, 40_000), copies(r, 60_000)]
+    return b"".join(parts * 2)
+
+
 def inputs():
     """Yields each input's name, bytes, and the most its one-shot output may
     take at level 1 and up, as a share of the input, in DEFLATE and in zstd:
@@ -141,8 +151,8 @@ def inputs():
     r = random.Random(3)
     yield "empty", b"", None, None
     yield "one byte", b"a", None, None
-    yield "text", text(100_000), (0.24, 0.19), 0.335
-    yield "json", json_doc(), (0.235, 0.205), 0.235
+    yield "text", text(100_000), (0.24, 0.19), 0.225
+    yield "json", json_doc(), (0.235, 0.205), 0.19
     # Stored where a code would grow it.
     yield "random", r.randbytes(300_000), 1.001, 1.001
     for n in (STORED_MAX - 1, STORED_MAX, STORED_MAX + 1, 2 * STORED_MAX,
@@ -168,8 +178,9 @@ def inputs():
            1.001, 0.345)
     yield ("repeats at 131072", repeats_at(r, ZSTD_WINDOW, 3 * ZSTD_WINDOW),
            1.001, 1.001)
-    yield "short matches", short_matches(r, 300_000), 0.39, 0.62
+    yield "short matches", short_matches(r, 300_000), 0.39, 0.475
     yield "skewed bytes", skewed(r, 300_000), 0.79, 0.795
+    yield "changing statistics", changing(random.Random(6)), None, 0.645
 
 
 def plans(n):
@@ -344,6 +355,59 @@ def check_limit(encode, level, tmp):
         raise Failure(f"the longest literal/length code is {max(lens[0])} bits")
 
 
+def zstd_modes(frame):
+    """The modes of each compressed block's sequence tables in a frame
+    zstd.goose writes, as (literal lengths, offsets, match lengths), None for
+    a block without sequences (RFC 8878 §3.1.1.3)."""
+    if frame[:4] != b"\x28\xb5\x2f\xfd" or frame[4] != 0x04:
+        raise Failure("not a frame with a window and a checksum alone")
+    pos = 6
+    modes = []
+    while True:
+        h = int.from_bytes(frame[pos:pos + 3], "little")
+        pos += 3
+        kind, size = (h >> 1) & 3, h >> 3
+        end = pos + (1 if kind == 1 else size)
+        if kind == 2:
+            # The literals section's header: raw and RLE literals give their
+            # count in 1 to 3 bytes; Huffman literals their size after it.
+            lit, fmt = frame[pos] & 3, (frame[pos] >> 2) & 3
+            if lit < 2:
+                lh = (1, 2, 1, 3)[fmt]
+                n = int.from_bytes(frame[pos:pos + lh], "little") >> (3 if lh == 1 else 4)
+                p = pos + lh + (1 if lit == 1 else n)
+            else:
+                lh, bits = ((3, 10), (3, 10), (4, 14), (5, 18))[fmt]
+                v = int.from_bytes(frame[pos:pos + lh], "little")
+                p = pos + lh + ((v >> (4 + bits)) & ((1 << bits) - 1))
+            if frame[p] == 0:
+                modes.append(None)
+            else:
+                p += 1 if frame[p] < 128 else 2 if frame[p] < 255 else 3
+                m = frame[p]
+                modes.append((m >> 6, (m >> 4) & 3, (m >> 2) & 3))
+        pos = end
+        if h & 1:
+            return modes
+
+
+def check_modes(encode, level, tmp):
+    """The changing input's blocks must build sequence tables one-shot, and
+    repeat them across flushes every 1,000 bytes; the two must take all four
+    modes, predefined, RLE, built, and repeated, between them."""
+    data = changing(random.Random(6))
+    seen = set()
+    flushed = ",".join(["1000,f"] * (len(data) // 1000 + 1))
+    for name, plan, mode in (("one-shot", None, 2), ("flushed", flushed, 3)):
+        out, _, _ = run(encode, "zstd", level, data, plan, tmp)
+        blocks = [m for m in zstd_modes(out) if m]
+        if not any(mode in m for m in blocks):
+            raise Failure(f"{name}: no block in mode {mode}")
+        seen.update(x for m in blocks for x in m)
+    if seen != {0, 1, 2, 3}:
+        raise Failure(f"modes {sorted(seen)} only")
+
+
 def fuzz_plan(r, n):
     steps = []
     left = n
@@ -387,11 +451,18 @@ def main():
                 except Failure as e:
                     sys.exit(f"FAIL the 15-bit limit, level {level}: {e}")
                 cases += 1
+        for level in zlevels:
+            try:
+                check_modes(args.encode, level, tmp)
+            except Failure as e:
+                sys.exit(f"FAIL the sequence tables' modes, zstd level {level}: {e}")
+            cases += 1
         r = random.Random(args.seed)
         for i in range(args.fuzz):
             n = r.choice((0, 1, r.randrange(1000), r.randrange(300_000)))
             data = r.choice((r.randbytes, text, lambda n: copies(r, n),
-                             lambda n: short_matches(r, n)))(n)
+                             lambda n: short_matches(r, n),
+                             lambda n: changing(r)[:n]))(n)
             fmt, level = r.choice(runs)
             plan = fuzz_plan(r, n)
             try:

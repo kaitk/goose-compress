@@ -83,7 +83,7 @@ levels; step 2 kept the 128 KB window, and the levels stay proposed:
       included, and XXH64 checked against known values
 - [x] Step 2: level 1 matches into compressed blocks, passing the same tests
 - [x] Step 3: Huffman literals, passing the same tests
-- [ ] Step 4: FSE tables per block, passing the same tests, with a fuzz run
+- [x] Step 4: FSE tables per block, passing the same tests, with a fuzz run
 - [ ] Step 5: level 3, passing the same tests
 - [ ] Step 6: libzstd built in `bench/` in release mode, and rate and ratio at levels
       1 and 3 recorded in `docs/results-history.md` with how they were measured
@@ -132,3 +132,22 @@ GB/s, a copy, to 596 MB/s. `compress` of 100 bytes takes 3.5 µs, from 1.3
 and FSE-coded weights, and holds text, JSON, and the other inputs with literals to
 tighter zstd limits. A unit test checks the exact bytes of a block of Huffman literals.
 Step 4 should beat 0.3768 on Silesia.
+
+## Step 4
+
+Done (2026-10-13). Each block codes its literal lengths, offsets, and match lengths
+each with the table of the fewest estimated bits: one built from the block's counts, at
+libzstd's accuracy of at most 9, 8, and 9; the predefined one; an RLE table for one
+code; or the last block's repeated, across flushes too. `reset` starts a frame with
+no table to repeat. Tables are now in libzstd's coding form, which the Huffman weights
+use too. On the M1 Pro, the 12 Silesia files come to 0.3378 of their size, from step
+3's 0.3768, below `zstd -1`'s 0.3457. Rates are within 2 percent of step 3's, inside
+the rounds' spread, and `compress` of 1,000 bytes takes 7.8 µs, from 7.1
+([results](../docs/results-history.md#zstd-fse-tables-per-block-task-004-step-4)).
+`scripts/roundtrip.py` adds 440,000 bytes whose statistics change between blocks, and
+reads back its frames: one-shot, blocks build tables; flushed every 1,000 bytes, they
+repeat them; and the two take all four modes. Fuzz runs of seeds 1 to 3 with 2,000
+cases each, and of seeds 4 to 6 with 3,000 cases at `--levels 1`, which makes 2 in 5
+cases zstd, all passed. A unit test checks the exact bytes of a block with built
+tables and a block after a flush that repeats them. Step 5, level 3, should beat
+level 1's 0.3378 on Silesia, toward `zstd -3`'s 0.3124 (zstd 1.5.7, `--no-check`).

@@ -650,6 +650,74 @@ file (`mozilla`), out of 21.7 MB.
 | zstd, step 2 | 1.3 | 3.2 | 24.5 |
 | zstd, step 3 | 3.5 | 7.0 | 35.0 |
 
+### zstd FSE tables per block: task 004 step 4
+
+2026-10-13, Goose `a6249a4`, `goose build` defaults with Apple clang 21.0.0. Step 3,
+with each kind of sequence code (literal lengths, offsets, match lengths) coded with
+the table that takes the fewest estimated bits: one built from the block's counts, the
+predefined one, an RLE table, or the last block's repeated. Measured with step 2's
+commands. Unlike step 3's run, the machine wasn't idle: Chrome and a virtual machine
+ran, at a load average of 5 to 9, so the builds ran in alternating rounds.
+
+Ratio, output over input, on the 12 Silesia files, `bench 1 FILE 1 zstd`. The
+`zstd -1` column is step 2's, from the zstd 1.5.7 command line.
+
+| File | Step 3 | Step 4 | zstd -1 |
+|---|---:|---:|---:|
+| dickens | 0.4748 | 0.3955 | 0.4182 |
+| webster | 0.3675 | 0.3201 | 0.3297 |
+| xml | 0.1670 | 0.1417 | 0.1300 |
+| nci | 0.1097 | 0.0873 | 0.0851 |
+| mozilla | 0.4242 | 0.3848 | 0.3901 |
+| samba | 0.2866 | 0.2537 | 0.2546 |
+| x-ray | 0.7986 | 0.7978 | 0.7992 |
+| mr | 0.4278 | 0.3680 | 0.3829 |
+| ooffice | 0.5787 | 0.5543 | 0.5841 |
+| osdb | 0.3877 | 0.3492 | 0.3697 |
+| reymont | 0.3965 | 0.3173 | 0.3245 |
+| sao | 0.8499 | 0.8200 | 0.8617 |
+| total | 0.3768 | 0.3378 | 0.3457 |
+
+The output is 10.4 percent smaller than step 3's and 2.3 percent smaller than
+libzstd's, with a 128 KB window against its 512 KB: smaller on 10 files, and larger
+on `xml` (9.0 percent) and `nci` (2.6). Where the difference comes from isn't measured
+here: libzstd's fast levels choose their tables by rules of thumb
+(`ZSTD_selectEncodingType`), and its matcher's parameters differ. Step 6 builds
+libzstd in `bench/`, where its blocks can be compared directly. Step 3's build gave
+`ooffice` 0.5787 here, against 0.5786 in its own table.
+
+Rate, MB/s, `bench 1 FILE 10 zstd`, 5 alternating rounds of the two builds, the median
+of the rounds' medians. Each file's rounds varied by 1.5 to 2.8 percent, under the
+load above, so the step 3 column sits 1 to 4 percent below step 3's own run.
+
+| File | Step 3 | Step 4 | Change |
+|---|---:|---:|---:|
+| dickens | 129.2 | 128.6 | -0.5% |
+| webster | 161.8 | 160.9 | -0.6% |
+| xml | 335.7 | 332.1 | -1.1% |
+| nci | 444.4 | 435.5 | -2.0% |
+| mozilla | 220.4 | 216.9 | -1.6% |
+| samba | 251.7 | 251.6 | 0.0% |
+| x-ray | 575.7 | 580.5 | +0.8% |
+
+Each change is within its rounds' spread. A block's sequences now take three passes:
+one computes and counts their codes, one counts the bits with the chosen tables, and
+one writes them. Before, two passes computed the codes, with nothing to count.
+
+`compress::compress` on the first N bytes of `dickens`, level 1, best of 3 runs of 5
+averages of 20,000,000 / (N + 2,000) calls, µs a call, the two builds alternating, as
+for step 2:
+
+| Format | 100 bytes | 1,000 bytes | 10,000 bytes |
+|---|---:|---:|---:|
+| zstd, step 3 | 3.55 | 7.08 | 35.2 |
+| zstd, step 4 | 3.55 | 7.78 | 36.8 |
+
+Planning three tables a block costs about 0.7 µs at 1,000 bytes. Normalizing counts
+was 6 percent of a 1,000-byte call (`sample`) while it started from each share rounded
+down; starting from the share rounded to nearest leaves the greedy adjustment fewer
+steps, cut that call by about 0.2 µs, and left Silesia's output the same to the byte.
+
 ## AMD Ryzen 7 5800X3D, Windows
 
 - Desktop on an MSI `MS-7A34` board, AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,
