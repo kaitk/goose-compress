@@ -1310,3 +1310,45 @@ sequences, both to count and to code them. At level 3 on `webster`, the double-f
 matcher is 55 percent of the package's samples and 75 percent of libzstd's. On `x-ray`
 at level 1, coding the literals is 46 percent of the package's samples and 34 of
 libzstd's.
+
+### Task 005: zstd coding changes, at `b396581`
+
+2026-10-13, task 005 step 5, after the [profile](#zstd-profile-at-8ec4538). Each
+change against the build before it, with the same output, in 3 alternating rounds of
+`bench LEVEL FILE 5 zstd`; the median of the rounds' medians. The base is `8ec4538`.
+
+| File | Level | Base MB/s | `3df4fe4` | `b3f480f` | `b396581` |
+|---|---:|---:|---:|---:|---:|
+| dickens | 1 | 153.9 | -0.1% | +5.0% | +26.3% |
+| webster | 1 | 191.2 | -0.8% | +4.8% | +24.7% |
+| xml | 1 | 406.3 | -0.2% | +2.8% | +21.8% |
+| nci | 1 | 532.5 | -0.5% | +3.2% | +27.1% |
+| mozilla | 1 | 251.0 | +0.5% | +3.4% | +18.8% |
+| samba | 1 | 303.9 | +0.2% | +4.2% | +20.3% |
+| x-ray | 1 | 674.4 | -0.7% | -1.6% | -0.4% |
+| dickens | 3 | 133.1 | -0.9% | +4.9% | +17.4% |
+| webster | 3 | 160.4 | +0.1% | +3.5% | +15.7% |
+| xml | 3 | 370.2 | +0.3% | +2.6% | +16.6% |
+| nci | 3 | 503.1 | +0.3% | +3.8% | +20.7% |
+| mozilla | 3 | 192.3 | +0.4% | +2.9% | +12.9% |
+| samba | 3 | 259.4 | +0.0% | +4.4% | +13.8% |
+| x-ray | 3 | 136.1 | -0.4% | +2.5% | +5.9% |
+
+- `3df4fe4` indexes the hash tables `% ZSTD_HASH_SIZE` and `% ZSTD_LONG_SIZE`, as
+  DEFLATE's `match_len` does its table, which drops 7 of the matchers' bounds checks.
+  Level 3 keeps two, where the index is a `var` carried from one position to the next.
+  Within noise; kept for the checks.
+- `b3f480f` writes a block's sequences once. A bound on their bits, from each code's
+  count, its extra bits, and the most bits a state of its table writes, shows the block
+  is smaller than raw; the block is then written behind a placeholder header that's
+  filled in after. Where the bound doesn't show it, `seq_bits` counts the bits first,
+  as before. Writing every block before knowing its size, and shrinking `out` back where
+  it came out larger, gained the same, but a shrink through `out` makes
+  `compress::compress` one that shrinks its argument, and the checker then rejects a
+  caller holding any slice that could refer into it (spec §5.1). `x-ray` at level 1 is
+  1.6 percent slower in two runs; none of its blocks are raw, and the time is in the
+  literals' Huffman coding, which the change doesn't touch.
+- `b396581` copies each sequence's literals into `lits`, one buffer per block, when the
+  sequence is stored, as libzstd's `ZSTD_storeSeq` does. Counting and coding the
+  literals then read four flat segments, not runs found by walking the sequences. The
+  encoder grows by 131,080 bytes, to 1,010,955.

@@ -112,9 +112,10 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
   more: zstd blocks end on a byte boundary. Tables repeat across flushes, and `reset`
   starts a frame with none. The frame declares a 128 KB window, which
   matches reach across writes and flushes, and ends with the low 32 bits of the
-  input's XXH64. A `ZstdEncoder` is a fixed-size value of 879,875 bytes: the window,
+  input's XXH64. A `ZstdEncoder` is a fixed-size value of 1,010,955 bytes: the window,
   a 128 KB block, and 32 KB to slide by, hash tables of 128 KB and, for level 3,
-  256 KB, 128 KB of sequences and 48 KB of their codes, and 11 KB of FSE tables. Its
+  256 KB, 128 KB of sequences, 128 KB of their literals, and 48 KB of their codes, and
+  11 KB of FSE tables. Its
   `reset` clears nothing large: a stream starts out of the hash tables' reach, and
   they're cleared after 2 GB of streams, counting 128 KB more for each
   ([architecture](docs/architecture/README.md)). `compress` of 100 bytes takes 2.5 µs at
@@ -153,19 +154,19 @@ gzip on a Ryzen 7 5800X3D under Windows 11, at `8ec4538`, over seven Silesia fil
     that Goose can't express
     ([findings](docs/goose-findings.md#goose-has-no-carryless-multiply)).
 
-zstd on the same Ryzen, at `8ec4538`, against libzstd v1.5.7 and klauspost/compress
+zstd on the same Ryzen, at `b396581`, against libzstd v1.5.7 and klauspost/compress
 v1.20.3, all with the checksum[^3]:
 
 | Level | goose | goose vs libzstd | goose vs klauspost | Output, 12 Silesia files |
 |---:|---:|---:|---:|---|
-| 1 | 150–670 MB/s | 2.0–2.4× slower | 1.3× slower | 2.2% smaller than libzstd's, 2.9% than klauspost's |
-| 3 | 130–500 MB/s | 1.5–1.7× slower | 1.1–1.3× slower | 4.2% larger than libzstd's (2.3% smaller at its 128 KB window) |
+| 1 | 210–700 MB/s | 1.5–1.7× slower | even: klauspost 0.94–1.08× as fast | 2.2% smaller than libzstd's, 2.9% than klauspost's |
+| 3 | 150–640 MB/s | 1.2–1.4× slower | klauspost 0.91–1.18× as fast | 4.2% larger than libzstd's (2.3% smaller at its 128 KB window) |
 
-[^3]: The median of 10 runs. Rates against libzstd on six of seven files; on `x-ray`,
-    1.3 times slower at level 1 and 1.1 at level 3, and 3.5 times slower than klauspost
-    at level 1, whose literals it leaves raw. zstd's speed is being tuned in task 005:
-    on `webster` at level 1 the coding takes 3.8 times libzstd's time a byte and the
-    matcher 1.5 times ([profile](docs/results-history.md#zstd-profile-at-8ec4538)).
+[^3]: The median of 10 runs. Rates on six of seven files. On `x-ray`, libzstd is 1.3
+    times faster at level 1 and level at 3, and klauspost 3.6 times faster at level 1,
+    leaving its literals raw. zstd's speed is being tuned in task 005: three changes
+    to its coding gained 25 to 35 percent at level 1 and 16 to 26 at level 3 on six
+    files ([results](docs/results.md#zstd-levels-1-and-3-at-b396581)).
 
 ## Credits
 

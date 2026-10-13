@@ -255,3 +255,33 @@ libzstd is 1.47 to 1.67 times faster on six files and 1.10 times on `x-ray`;
 klauspost is 1.07 to 1.34 times. On `webster` at level 1, the coding after the matcher
 takes 3.8 times libzstd's time a byte and the matcher 1.5 times
 ([profile](results-history.md#zstd-profile-at-8ec4538)).
+
+### zstd levels 1 and 3 at `b396581`
+
+2026-10-13, task 005 step 5: three changes to the package's zstd coding, with the same
+output, measured as at `8ec4538`, one run.
+
+| File | Level 1 goose | libzstd | libzstd, 128 KB | klauspost | Level 3 goose | libzstd | libzstd, 128 KB | klauspost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 205.1 | 355.9 | 315.2 | 205.8 | 160.6 | 196.2 | 209.2 | 161.4 |
+| webster | 246.9 | 415.0 | 359.7 | 252.8 | 191.9 | 237.6 | 274.6 | 202.6 |
+| xml | 515.8 | 831.7 | 708.7 | 528.3 | 448.7 | 615.4 | 581.6 | 408.6 |
+| nci | 699.3 | 1,013.3 | 975.2 | 654.3 | 635.9 | 808.8 | 833.7 | 605.2 |
+| mozilla | 310.9 | 529.0 | 452.7 | 335.2 | 222.6 | 282.4 | 324.1 | 263.7 |
+| samba | 373.7 | 608.6 | 518.0 | 396.9 | 306.0 | 389.4 | 407.9 | 333.1 |
+| x-ray | 652.1 | 842.7 | 945.3 | 2,330.0 | 145.5 | 147.6 | 209.7 | 149.7 |
+
+At level 1, libzstd is 1.45 to 1.74 times faster on six files and 1.29 times on
+`x-ray`; klauspost's rate is 0.94 to 1.08 times the package's on six files, and 3.6
+times on `x-ray`. At level 3, libzstd is 1.22 to 1.37 times faster on six files and
+level on `x-ray`; klauspost's rate is 0.91 to 1.18 times the package's.
+
+Each change against the build before it, in 3 alternating rounds of `bench LEVEL FILE 5
+zstd` (`build/task005/ab.sh`), the median of the rounds' medians, per file in
+[results-history.md](results-history.md#task-005-zstd-coding-changes-at-b396581):
+
+| Change | Level 1 | Level 3 | Kept |
+|---|---|---|---|
+| `3df4fe4`: hash tables indexed `% n`, 7 bounds checks dropped | -0.8% to +0.5% | -0.9% to +0.4% | yes, for the checks |
+| `b3f480f`: sequences written once, behind a bound on their bits | +2.8% to +5.0%, `x-ray` -1.6% | +2.5% to +4.9% | yes |
+| `b396581`: literals copied into one buffer as each sequence is stored | +18.8% to +27.1%, `x-ray` -0.4% | +5.9% to +20.7% | yes, at 131,072 more bytes |

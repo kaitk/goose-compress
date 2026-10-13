@@ -22,7 +22,18 @@ libdeflate's rate in C; recording and writing the symbols takes about 16 ms of a
 `dickens` run against libdeflate's 9, and the small changes to that path tried came
 within noise ([results](../docs/results-history.md#task-005-the-symbol-path-at-level-1-not-kept)).
 
-Next is step 5, zstd (2026-10-13). Left for DEFLATE, after it:
+Step 5, zstd, is in progress (2026-10-13). On the Ryzen at `8ec4538`, libzstd was 2.0
+to 2.4 times faster at level 1 and 1.5 to 1.7 at level 3, and the coding after the
+matcher took 3.8 times libzstd's time a byte on `webster`
+([profile](../docs/results-history.md#zstd-profile-at-8ec4538)). Three changes to
+the coding, `b396581` the largest (literals copied into one buffer as each sequence is
+stored), leave libzstd 1.45 to 1.74 times faster at level 1 and 1.22 to 1.37 at level
+3, with klauspost about even
+([results](../docs/results.md#zstd-levels-1-and-3-at-b396581)). Left for zstd: a new
+profile, `code_seqs`, `inline fn` for the matchers, and the tables against the 512 KB
+L2.
+
+Left for DEFLATE, after zstd:
 
 - Level 1's blocks as libdeflate's `deflate_compress_fastest` makes them: up to 64 KB
   of input or 8,192 matches, with literals counted as runs and read back from the
