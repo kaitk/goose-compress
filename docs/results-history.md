@@ -1282,3 +1282,31 @@ symbols, about 16 ms of the run against about 9 in libdeflate.
   does: within 1 percent in quick checks. Not kept.
 - The next position's bucket prefetched at level 1, in `p7`: 2 to 8 percent slower in
   quick checks; loaded early instead, as level 6 does, within 2 percent.
+
+### zstd profile at `8ec4538`
+
+2026-10-13, task 005 step 5. The run against libzstd and klauspost is in
+[results.md](results.md#zstd-levels-1-and-3-at-8ec4538). Profiles from the in-process
+sampler (a thread that records the main thread's instruction pointer every ~20 µs):
+the package's `goose build` C with the sampler, at `/O2` with debug info, `bench 1
+webster 15 zstd`; and libzstd v1.5.7 compiled from source with clang 22.1.3 at `-O3`
+into one program with the sampler, `ZSTD_compress2` with the checksum, 25 runs. Shares
+are of each profile's samples, inlined callees counted in their callers; ms/MB is the
+share times each one's time per MB in the profiled run (173.3 and 383.1 MB/s).
+
+| Work | Package | Share | ms/MB | libzstd | Share | ms/MB |
+|---|---|---:|---:|---|---:|---:|
+| Matching | `match_zstd_fast` | 47% | 2.68 | `ZSTD_compressBlock_fast` | 69% | 1.80 |
+| Everything after | `zstd_block`, `put_huff_literals`, `put_seqs`, `write` | 53% | 3.09 | `ZSTD_encodeSequences`, `HIST_count_parallel_wksp`, `ZSTD_buildSequencesStatistics`, `HUF_compress1X_usingCTable_internal`, `ZSTD_XXH64_update`, and table builds | 31% | 0.81 |
+
+The package's matcher takes 1.5 times libzstd's time a byte, and the rest 3.8 times. By
+line, the rest is counting the literals (`plan_literals`, 12 percent of the samples),
+Huffman coding them (`put_huff_literals`, 11), computing and counting each sequence's
+codes (`code_seqs`, 10), and the FSE state steps (8), which run twice per sequence:
+once in `seq_bits`, to learn the block's size before its header is written, and again
+in `put_seqs`. libzstd counts literals copied into one buffer as each sequence is
+stored (`ZSTD_storeSeq`); the package reads them back run by run through the
+sequences, both to count and to code them. At level 3 on `webster`, the double-fast
+matcher is 55 percent of the package's samples and 75 percent of libzstd's. On `x-ray`
+at level 1, coding the literals is 46 percent of the package's samples and 34 of
+libzstd's.

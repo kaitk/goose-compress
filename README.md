@@ -133,12 +133,12 @@ mode, and klauspost/compress in Go. Each machine's full tables, setup, and metho
 
 gzip on a Ryzen 7 5800X3D under Windows 11, at `8ec4538`, over seven Silesia files[^1]:
 
-| Level | goose MB/s | libdeflate MB/s | zlib-ng MB/s | goose / libdeflate rate | goose output vs libdeflate's |
+| Level | goose | libdeflate | zlib-ng | goose / libdeflate rate | goose output vs libdeflate's |
 |---:|---:|---:|---:|---:|---:|
-| 0 | 2,639–2,833 | 12,859–19,144 | 14,214–17,252 | 0.14–0.21[^2] | stored |
-| 1 | 107–363 | 163–650 | 158–887 | 0.56–0.66 | −0.1% to +0.2% |
-| 6 | 64–196 | 72–232 | 67–214 | 0.74–0.88 | +0.1% to +4.3% |
-| 9 | 31–86 | 31–101 | 28–81 | 0.85–1.12 | +0.1% to +4.5% |
+| 0 | 2.6–2.8 GB/s | 13–19 GB/s | 14–17 GB/s | 0.14–0.21[^2] | stored |
+| 1 | 110–360 MB/s | 160–650 MB/s | 160–890 MB/s | 0.56–0.66 | −0.1% to +0.2% |
+| 6 | 64–200 MB/s | 72–230 MB/s | 67–210 MB/s | 0.74–0.88 | +0.1% to +4.3% |
+| 9 | 31–86 MB/s | 31–100 MB/s | 28–81 MB/s | 0.85–1.12 | +0.1% to +4.5% |
 
 [^1]: One-shot, the whole file in memory; a cell gives the range over the seven files.
     Levels 1, 6, and 9 are each file's median of 3 alternating rounds of 5 runs at
@@ -153,19 +153,19 @@ gzip on a Ryzen 7 5800X3D under Windows 11, at `8ec4538`, over seven Silesia fil
     that Goose can't express
     ([findings](docs/goose-findings.md#goose-has-no-carryless-multiply)).
 
-zstd on an M1 Pro, at `237de3a`, against libzstd v1.5.7 and klauspost/compress v1.20.3,
-all with the checksum[^3]:
+zstd on the same Ryzen, at `8ec4538`, against libzstd v1.5.7 and klauspost/compress
+v1.20.3, all with the checksum[^3]:
 
-| Level | goose MB/s | goose vs libzstd | goose vs klauspost | Output, 12 Silesia files |
+| Level | goose | goose vs libzstd | goose vs klauspost | Output, 12 Silesia files |
 |---:|---:|---:|---:|---|
-| 1 | 132–600 | 2.3–3.2× slower | 1.6–1.7× slower | 2.2% smaller than libzstd's, 2.9% than klauspost's |
-| 3 | 114–430 | 1.7–2.3× slower | 1.4–1.9× slower | 4.2% larger than libzstd's (2.3% smaller at its 128 KB window) |
+| 1 | 150–670 MB/s | 2.0–2.4× slower | 1.3× slower | 2.2% smaller than libzstd's, 2.9% than klauspost's |
+| 3 | 130–500 MB/s | 1.5–1.7× slower | 1.1–1.3× slower | 4.2% larger than libzstd's (2.3% smaller at its 128 KB window) |
 
-[^3]: Rates on six of seven files; on `x-ray` at level 1, 1.2 and 3.8 times slower.
-    zstd's speed is still being tuned: on `webster` at level 1 the coding takes 4.3
-    times libzstd's time a byte and the matcher 2.1 times
-    ([profile](docs/results-history.md#zstd-against-libzstd-and-klauspost-task-004-step-6)).
-    zstd hasn't been measured on the Ryzen yet.
+[^3]: The median of 10 runs. Rates against libzstd on six of seven files; on `x-ray`,
+    1.3 times slower at level 1 and 1.1 at level 3, and 3.5 times slower than klauspost
+    at level 1, whose literals it leaves raw. zstd's speed is being tuned in task 005:
+    on `webster` at level 1 the coding takes 3.8 times libzstd's time a byte and the
+    matcher 1.5 times ([profile](docs/results-history.md#zstd-profile-at-8ec4538)).
 
 ## Credits
 

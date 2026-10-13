@@ -217,3 +217,41 @@ with the same output. Every cell is 0.8 to 9.0 percent faster than `24ac46b`
 | 6 | 64–196 | 72–232 | 0.74–0.88 |
 | 9 | 31–86 | 31–101 | 0.85–1.12 |
 
+
+### zstd levels 1 and 3 at `8ec4538`
+
+2026-10-13, task 005 step 5, package at `8ec4538`: zstd's first run on this machine.
+Against:
+
+- libzstd v1.5.7, a CMake `Release` build with Ninja and clang 22.1.3 (`-O3`) and its
+  default options, through `bench/ref.c` at `-O2`, same compiler: `ZSTD_compress2`
+  with `ZSTD_c_checksumFlag` on, at its own window for the input (512 KB at level 1, 2
+  MB at level 3), and as `libzstd-w17` at the package's 128 KB.
+- klauspost/compress v1.20.3, built by Go 1.27.0 with `go build` defaults, through
+  `bench/klauspost`: `EncodeAll` with `WithEncoderCRC(true)`, at `SpeedFastest` against
+  level 1 and `SpeedDefault` against level 3, with its default window.
+
+Every library writes the content checksum and compresses one-shot, the whole file in
+memory. Rate, MB/s, `FORMAT=zstd bench/run.sh`: 10 runs per cell, the median. The run
+went twice, at 1 percent CPU load before it; each cell's medians agreed within 3
+percent, except `libzstd-w17` at level 3 on `xml`, within 10.2. The table is the
+first. Output sizes are the same as the M1 Pro's
+([ratios](#zstd-levels-1-and-3-at-237de3a)).
+
+| File | MB | Level 1 goose | libzstd | libzstd, 128 KB | klauspost | Level 3 goose | libzstd | libzstd, 128 KB | klauspost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 10.2 | 152.9 | 361.0 | 311.9 | 205.5 | 132.8 | 195.0 | 210.3 | 160.8 |
+| webster | 41.5 | 190.8 | 418.7 | 358.2 | 251.9 | 158.6 | 238.7 | 277.3 | 200.6 |
+| xml | 5.3 | 406.4 | 828.5 | 691.4 | 519.8 | 366.1 | 610.7 | 529.6 | 392.8 |
+| nci | 33.6 | 517.2 | 1,024.9 | 975.8 | 652.6 | 504.0 | 814.3 | 822.2 | 578.4 |
+| mozilla | 51.2 | 247.9 | 518.0 | 450.6 | 333.2 | 192.3 | 282.6 | 324.7 | 258.3 |
+| samba | 21.6 | 299.4 | 603.2 | 513.9 | 398.1 | 260.0 | 387.8 | 411.8 | 330.9 |
+| x-ray | 8.5 | 670.9 | 846.4 | 945.2 | 2,327.1 | 133.8 | 146.9 | 209.6 | 150.0 |
+
+The package loses every rate, by less than on the M1 Pro. At level 1, libzstd is 2.0
+to 2.4 times faster on six files and 1.26 times on `x-ray`; klauspost is 1.26 to 1.34
+times faster on six and 3.5 times on `x-ray`, whose literals it leaves raw. At level 3,
+libzstd is 1.47 to 1.67 times faster on six files and 1.10 times on `x-ray`;
+klauspost is 1.07 to 1.34 times. On `webster` at level 1, the coding after the matcher
+takes 3.8 times libzstd's time a byte and the matcher 1.5 times
+([profile](results-history.md#zstd-profile-at-8ec4538)).
