@@ -145,3 +145,55 @@ Workaround: no `clz`, `ctz`, or `popcount` in a hot path. A de Bruijn multiply a
 64-entry table was still 3-12 percent slower at level 1 than shifting the xor of the
 two words a byte at a time. The length and distance codes and a distance's logarithm
 come from tables built once.
+
+## `simd fn` doesn't turn std bit loops into instructions
+
+Found on `a6249a4`, task 005. Status: open
+
+A `simd fn`'s AVX2 version is compiled with `target("avx2,bmi,bmi2,lzcnt,popcnt")`
+(`GS_SIMD_TARGET1` in the runtime), so `tzcnt` and `popcnt` are available to clang
+there. std's `ctz` and `popcount` still compile to loops in it. `ctz`'s loop, shift
+right until the low bit is set, isn't an idiom LLVM recognizes, even in hand-written C.
+`popcount`'s loop, clear the lowest set bit and count, is one, but LLVM rewrites it
+only when it isn't nested in another loop: as a function of its own it becomes
+`popcntq`, and inlined into a loop, the only place a match compare calls it, it stays
+a loop. Expected: one instruction each, at least in a `simd fn`'s versions. The
+program below, with `ctz` or with `popcount((x & (0 - x)) - 1)` in its place, takes
+0.75 to 1.0 s on a Ryzen 7 5800X3D under Windows, as the baseline does, and its
+binary has no `tzcnt` or `popcnt`.
+
+    import std;
+    import os;
+
+    simd fn count(x0: u64) -> i64 {
+        var x = x0;
+        var n = 0;
+        for i in 100000000 {
+            n += ctz(x);
+            x += 1 << 20;
+        }
+        return n;
+    }
+
+    fn main() {
+        print(count((args().len as! u64) << 40));
+    }
+
+Workaround: none; `ctz` stays out of hot paths. A `simd` matcher whose `match_len`
+compares 8 bytes and calls `ctz` was 4 to 26 percent slower than `6b57c40` at levels 1,
+6, and 9 on six Silesia files of seven
+([results](results-history.md#step-2-simd-fn-gives-stds-bit-scans-no-instruction)).
+
+## Bounds checks can't be turned off to measure them
+
+Found on `a6249a4`, task 005. Status: open
+
+`goose build` has no unchecked mode, so measuring what the bounds checks cost takes
+editing the C it writes: `GS_IDX` and the slice checks are in the generated file, not
+behind a define. In `bench`, removing all of them made level 1 1 to 14 percent faster
+on Silesia and levels 6 and 9 up to 14 percent, on `x-ray`
+([results](results-history.md#step-3-the-hand-fixed-c)). Expected: a define or flag
+that drops them, for measurement, as `GS_DEBUG` adds overflow checks.
+
+Workaround: `goose build -v --dry-run` prints the C file and the compile command; edit
+a copy of the file and compile it with that command.

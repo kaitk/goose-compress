@@ -1,6 +1,12 @@
 # 005: Parity with the C libraries, Ryzen first
 
-Status: todo
+Status: in-progress
+
+Steps 1 to 3 are done (2026-10-13). The hand-fixed C reaches 0.63 to 0.91 of
+libdeflate's rate, so step 3 points to the structure
+([results](../docs/results-history.md#task-005-steps-2-and-3-simd-fn-and-the-codegen-ceiling)).
+Next: port libdeflate's `hc_matchfinder` for levels 6 and 9, then its level 1 loop,
+with the state in locals and the checks hoisted as in the hand-fixed C.
 
 The package is slower than libdeflate and zlib-ng at every level on both machines
 (`docs/results.md`). Its rate should at worst match theirs. If the Goose encoder can't get
@@ -96,9 +102,9 @@ that zlib-ng's faster level 1 costs a third more output. The results for this ta
 
 ## Acceptance criteria
 
-- [ ] Pin moved, and the Ryzen's baseline at `HEAD` recorded in `docs/results.md`
-- [ ] The `simd fn` bit-scan check done, and the result recorded
-- [ ] The hand-fixed C's rates recorded beside libdeflate's, with which outcome of step
+- [x] Pin moved, and the Ryzen's baseline at `HEAD` recorded in `docs/results.md`
+- [x] The `simd fn` bit-scan check done, and the result recorded
+- [x] The hand-fixed C's rates recorded beside libdeflate's, with which outcome of step
       3 they point to
 - [ ] Each change measured on its own against the build before it, kept or not, with the
       numbers in `docs/results.md`

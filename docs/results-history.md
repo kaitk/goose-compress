@@ -970,3 +970,135 @@ Padding of 32 or 2,048 bytes before the global `Encoder` left `x-ray` at 69.4 to
 so its placement isn't the cause: with the address known, clang compiles the matcher
 differently. In a resizable, the address is loaded at run time, and the rate is the
 same as before.
+
+### Levels 1, 6, and 9 at `43cb937`
+
+2026-10-12, task 003, package at `43cb937`: the chain search's one range test and the
+code tables on top of `540ae3c`. `LEVELS="1 6 9" bench/run.sh`: gzip output, one-shot,
+the whole file in memory, 10 runs per cell, same machine, compilers, and libraries.
+MB/s is the median of the 10 runs; the ratios are as at `540ae3c`
+([above](#levels-0-1-6-and-9-at-540ae3c)).
+
+| File | Level 1 goose | zlib-ng | libdeflate | Level 6 goose | zlib-ng | libdeflate | Level 9 goose | zlib-ng | libdeflate |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 174.3 | 284.4 | 261.7 | 47.7 | 66.9 | 74.8 | 22.1 | 27.5 | 32.9 |
+| webster | 195.3 | 334.2 | 291.0 | 66.4 | 84.4 | 105.1 | 26.3 | 43.1 | 38.9 |
+| xml | 306.5 | 671.9 | 504.9 | 117.8 | 163.1 | 188.6 | 39.6 | 79.9 | 64.3 |
+| nci | 379.2 | 881.2 | 629.7 | 123.7 | 212.7 | 238.0 | 28.6 | 71.5 | 63.5 |
+| mozilla | 192.1 | 316.5 | 268.4 | 70.2 | 92.3 | 119.0 | 18.7 | 27.6 | 31.4 |
+| samba | 248.8 | 434.8 | 366.8 | 86.3 | 118.5 | 136.6 | 29.7 | 50.9 | 47.1 |
+| x-ray | 129.8 | 158.1 | 160.5 | 60.7 | 74.3 | 119.1 | 58.0 | 43.3 | 101.6 |
+
+Goose beats zlib-ng's rate on `x-ray` at level 9, 58.0 MB/s against 43.3, and loses
+every other rate. At level 1 it's 1.2 to 2.3 times slower than zlib-ng and 1.2 to 1.7
+times slower than libdeflate (1.5 to 4.8 and 1.5 to 3.5 at `540ae3c`); at level 6, 1.2
+to 1.7 and 1.6 to 2.0 times; at level 9, up to 2.5 and 1.5 to 2.2 times.
+
+### Task 005 steps 2 and 3: `simd fn` and the codegen ceiling
+
+2026-10-13, task 005, package at `6b57c40`, Goose `a6249a4`, same machine, compilers,
+and libraries. No other benchmark or build ran during the runs below, CPU load was 2
+to 4 percent before each, and Docker Desktop, Firefox, and two idle agent sessions ran
+beside them. A run cut short when a build in another session overlapped it was
+discarded.
+
+Each build ran as `bench LEVEL FILE 5`, gzip, one-shot, in 3 alternating rounds with
+the others on the 7 Silesia files; a cell is the median of the 3 rounds' medians, in
+MB/s. Every build below writes the same bytes as `6b57c40`, checked on `xml`, `x-ray`,
+and `dickens` at levels 1, 6, and 9.
+
+#### Step 2: `simd fn` gives std's bit scans no instruction
+
+A `simd fn`'s AVX2 version is compiled with `target("avx2,bmi,bmi2,lzcnt,popcnt")`, so
+`tzcnt` and `popcnt` are available to clang there, but std's `ctz` and `popcount` stay
+loops in it ([findings](goose-findings.md#simd-fn-doesnt-turn-std-bit-loops-into-instructions)).
+Two builds, run in the same rounds as step 3's first run:
+
+- S1: `simd` on `match_fast` and `match_chains`, so `search` and `match_len` are
+  compiled into the AVX2 version.
+- S2: S1, with `match_len` comparing 8 bytes at a time and finding the first differing
+  byte with std's `ctz`.
+
+| Level | Build | dickens | webster | xml | nci | mozilla | samba | x-ray |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | `6b57c40` | 187.3 | 209.0 | 309.4 | 375.5 | 207.3 | 258.8 | 136.7 |
+| | S1 | +1.4% | +2.2% | +5.9% | +7.1% | +2.0% | +3.3% | +0.4% |
+| | S2 | -12.4% | -10.8% | -7.7% | +1.5% | -10.7% | -6.3% | -7.9% |
+| 6 | `6b57c40` | 49.1 | 68.0 | 121.6 | 128.4 | 73.5 | 88.0 | 68.1 |
+| | S1 | +0.4% | +1.6% | +0.3% | -1.0% | +1.1% | +1.5% | +1.0% |
+| | S2 | -7.7% | -6.8% | -6.9% | -11.2% | -9.9% | -3.6% | +4.7% |
+| 9 | `6b57c40` | 22.4 | 26.6 | 40.6 | 29.2 | 19.0 | 30.8 | 65.5 |
+| | S1 | +1.8% | +2.6% | +0.5% | +2.1% | +3.2% | +1.3% | +2.4% |
+| | S2 | -7.6% | -7.1% | -6.9% | -16.8% | -25.8% | -6.5% | +9.5% |
+
+Neither kept. S1 is 0.4 to 7.1 percent faster at level 1 and -1.0 to +3.2 percent at
+levels 6 and 9, near the 1 percent between two builds of the same code. S2 is 4 to 26
+percent slower everywhere but `x-ray` (+5 to +10 percent) and `nci` at level 1, as
+the 8-byte compare with std's `ctz` was at task 001 step 4.
+
+#### Step 3: the hand-fixed C
+
+`goose build -v --dry-run` wrote `bench.c` for `6b57c40`, and edited copies were
+compiled with its command, `clang-cl -O2` and the release runtime object:
+
+- `c-head`: the C unchanged, as a control.
+- `c-unchecked`: every bounds and slice check removed from the whole program.
+- `c-hf`: `match_fast`, `match_chains`, and `lz_write` rewritten in C with the same
+  algorithm, with `search`, `match_len`, `add_lit`, `add_match`, and `insert` inlined:
+  no bounds checks, the encoder's scalars in locals, written back before `end_block`
+  and at the end, and an 8-byte `match_len` with `__builtin_ctzll`. `lz_write` is
+  included because Goose's inliner had given it its own copy of `match_fast`.
+- `c-hf-bytecmp`: `c-hf` comparing a byte at a time, as the Goose code does.
+
+The `c-unchecked` row is from the first run, with S1 and S2; the others from a second
+run with libdeflate and zlib-ng in the same rounds. The first run's `c-hf` rows at
+level 1 are left out: they ran the old `match_fast` in `lz_write`.
+
+| Level | Build | dickens | webster | xml | nci | mozilla | samba | x-ray |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | `6b57c40` | 189.1 | 209.8 | 313.3 | 383.5 | 212.3 | 264.1 | 139.7 |
+| | `c-head` | -3.3% | -1.1% | -2.1% | -0.4% | -2.0% | -2.5% | -1.9% |
+| | `c-unchecked` (first run) | +3.2% | +5.0% | +10.2% | +13.9% | +5.0% | +7.7% | +1.2% |
+| | `c-hf-bytecmp` | +12.7% | +15.2% | +20.3% | +24.2% | +13.7% | +15.4% | +9.0% |
+| | `c-hf` | 213.2 | 241.2 | 387.9 | 522.4 | 242.0 | 308.2 | 149.8 |
+| | libdeflate | 263.4 | 294.2 | 505.9 | 656.4 | 276.6 | 371.6 | 164.8 |
+| | zlib-ng | 282.5 | 343.5 | 681.7 | 896.5 | 318.0 | 431.6 | 158.6 |
+| | `c-hf` / libdeflate | 0.81 | 0.82 | 0.77 | 0.80 | 0.87 | 0.83 | 0.91 |
+| 6 | `6b57c40` | 50.0 | 69.7 | 123.8 | 130.4 | 75.0 | 90.8 | 70.7 |
+| | `c-head` | +0.0% | -0.3% | +0.2% | -0.1% | -0.3% | -0.7% | -0.4% |
+| | `c-unchecked` (first run) | +0.4% | +1.6% | -0.7% | -0.5% | +3.4% | +3.0% | +12.5% |
+| | `c-hf-bytecmp` | -1.2% | +0.7% | +2.6% | +6.0% | +3.3% | +2.6% | +7.2% |
+| | `c-hf` | 53.6 | 74.6 | 138.6 | 163.3 | 82.7 | 100.1 | 76.7 |
+| | libdeflate | 73.7 | 104.4 | 186.5 | 236.6 | 120.5 | 136.0 | 121.8 |
+| | zlib-ng | 67.8 | 85.0 | 165.4 | 215.6 | 93.8 | 119.6 | 75.7 |
+| | `c-hf` / libdeflate | 0.73 | 0.71 | 0.74 | 0.69 | 0.69 | 0.74 | 0.63 |
+| 9 | `6b57c40` | 22.9 | 27.1 | 41.0 | 30.0 | 19.2 | 30.8 | 67.7 |
+| | `c-head` | +0.0% | +0.0% | -0.2% | +0.0% | -0.5% | +0.3% | -0.1% |
+| | `c-unchecked` (first run) | +1.8% | +0.4% | +0.2% | +2.7% | +5.3% | +2.6% | +14.0% |
+| | `c-hf-bytecmp` | -1.3% | +0.0% | +2.9% | +9.0% | +3.6% | +7.5% | +7.5% |
+| | `c-hf` | 24.1 | 28.5 | 46.4 | 42.0 | 21.8 | 38.0 | 74.2 |
+| | libdeflate | 31.6 | 37.7 | 62.5 | 62.2 | 30.9 | 45.9 | 102.7 |
+| | zlib-ng | 27.7 | 43.4 | 80.2 | 71.7 | 27.9 | 51.3 | 43.4 |
+| | `c-hf` / libdeflate | 0.76 | 0.76 | 0.74 | 0.68 | 0.71 | 0.83 | 0.72 |
+
+The hand-fixed C reaches 0.77 to 0.91 of libdeflate's rate at level 1, 0.63 to 0.74
+at level 6, and 0.68 to 0.83 at level 9: well behind, so step 3 points to the
+structure, not the codegen. It's 7 to 36 percent faster than the Goose build at level
+1, 7 to 25 percent at level 6, and 5 to 40 percent at level 9. Of that, the bounds
+checks alone give up to 14 percent, most at level 1 and on `x-ray`. The 8-byte compare
+gives 1 to 22 percent at levels 6 and 9, most on `nci`, where matches are long, and
+-2 to +10 percent at level 1. `c-head`, the same C as `6b57c40`'s binary, ran 0.4 to
+3.3 percent slower at level 1 and within 0.7 percent at levels 6 and 9, so the level 1
+gains carry about 2 percent of build noise.
+
+Where `c-hf`'s time goes, by `rdtsc` around `end_block` and the matchers in a build of
+it, `c-hf 3` runs a file: the matcher takes 66 to 69 percent at level 1 (19 to 28
+percent in `end_block`), 84 to 93 percent at level 6, and 85 to 98 percent at level
+9, so at levels 6 and 9 the gap is in the matcher. libdeflate's `hc_matchfinder` runs
+the same chains with the same depth and nice length, and differs in the rest: a
+candidate must match the 4 bytes ending at the best length and the first 4 before it's
+extended, against one byte and the first 4 here; the first 4-byte match has a loop of
+its own; it prefetches the next position's buckets; its minimum match length adapts
+to each block's literals, and it rejects 3-byte matches past 8 KB. Its level 1 is
+another loop entirely (`deflate_compress_fastest` and `ht_matchfinder`, nice length
+32).

@@ -130,35 +130,52 @@ level 3's gap. Where the time goes is in
 
 - Desktop on an MSI `MS-7A34` board, AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,
   AVX2 and no AVX-512), 32 GB, Windows 11 Pro 10.0.26200.
-- Goose `c38dc0f`, `goose build` defaults: `clang-cl` 22.1.3 at `/O2`, from Visual
+- Goose `a6249a4`, `goose build` defaults: `clang-cl` 22.1.3 at `/O2`, from Visual
   Studio Build Tools 2026 (18). `simd fn`s get an AVX2 version.
 - libdeflate v1.26 and zlib-ng 2.3.3, CMake `Release` builds with Ninja and clang
   22.1.3 and their default options, which pick each CPU's fastest code at run time;
   `bench/ref.c` at `-O2`, same compiler.
-- Run from Git Bash. Docker Desktop, a WSL distribution, and desktop apps ran beside
-  the benchmarks, at about 13 percent CPU load before they started, and no other
-  benchmark.
+- Run from Git Bash. Docker Desktop, Firefox, and two idle agent sessions ran beside
+  the benchmark, at about 2 percent CPU load before it started, and no other benchmark
+  or build.
 
-### Levels 1, 6, and 9 at `43cb937`
+### Levels 0, 1, 6, and 9 at `6b57c40`
 
-2026-10-12, task 003, package at `43cb937`: the chain search's one range test and the
-code tables on top of `540ae3c`. `LEVELS="1 6 9" bench/run.sh`: gzip output, one-shot,
-the whole file in memory, 10 runs per cell, same machine, compilers, and libraries.
-MB/s is the median of the 10 runs; the ratios are as at `540ae3c`
-([history](results-history.md#levels-0-1-6-and-9-at-540ae3c)).
+2026-10-13, task 005 step 1, package at `6b57c40`, the baseline for task 005. On this
+machine it adds `d71eb59`, `1f1ed62`, and `865d359` to the last run, at `43cb937`
+([history](results-history.md#levels-1-6-and-9-at-43cb937)).
+`LEVELS="0 1 6 9" bench/run.sh`: gzip output, one-shot, the whole file in memory, 10
+runs per cell; MB/s is the median of the 10. Sizes are each output's bytes against
+libdeflate's at the same level, from one run of `bench` and `ref`.
 
-| File | Level 1 goose | zlib-ng | libdeflate | Level 6 goose | zlib-ng | libdeflate | Level 9 goose | zlib-ng | libdeflate |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| dickens | 174.3 | 284.4 | 261.7 | 47.7 | 66.9 | 74.8 | 22.1 | 27.5 | 32.9 |
-| webster | 195.3 | 334.2 | 291.0 | 66.4 | 84.4 | 105.1 | 26.3 | 43.1 | 38.9 |
-| xml | 306.5 | 671.9 | 504.9 | 117.8 | 163.1 | 188.6 | 39.6 | 79.9 | 64.3 |
-| nci | 379.2 | 881.2 | 629.7 | 123.7 | 212.7 | 238.0 | 28.6 | 71.5 | 63.5 |
-| mozilla | 192.1 | 316.5 | 268.4 | 70.2 | 92.3 | 119.0 | 18.7 | 27.6 | 31.4 |
-| samba | 248.8 | 434.8 | 366.8 | 86.3 | 118.5 | 136.6 | 29.7 | 50.9 | 47.1 |
-| x-ray | 129.8 | 158.1 | 160.5 | 60.7 | 74.3 | 119.1 | 58.0 | 43.3 | 101.6 |
+| File | MB | Level 0 goose | zlib-ng | libdeflate |
+|---|---:|---:|---:|---:|
+| dickens | 10.2 | 2,756.1 | 17,251.9 | 19,144.3 |
+| webster | 41.5 | 2,769.0 | 15,777.0 | 14,313.9 |
+| xml | 5.3 | 2,639.0 | 17,209.5 | 12,858.5 |
+| nci | 33.6 | 2,833.1 | 16,562.2 | 17,465.7 |
+| mozilla | 51.2 | 2,639.4 | 14,213.7 | 13,814.6 |
+| samba | 21.6 | 2,804.5 | 15,676.1 | 18,829.1 |
+| x-ray | 8.5 | 2,724.9 | 17,178.7 | 18,727.6 |
 
-Goose beats zlib-ng's rate on `x-ray` at level 9, 58.0 MB/s against 43.3, and loses
-every other rate. At level 1 it's 1.2 to 2.3 times slower than zlib-ng and 1.2 to 1.7
-times slower than libdeflate (1.5 to 4.8 and 1.5 to 3.5 at `540ae3c`); at level 6, 1.2
-to 1.7 and 1.6 to 2.0 times; at level 9, up to 2.5 and 1.5 to 2.2 times.
+| File | Level 1 goose | size | zlib-ng | size | libdeflate | Level 6 goose | size | zlib-ng | size | libdeflate | Level 9 goose | size | zlib-ng | size | libdeflate |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 188.1 | +3.0% | 283.1 | +42.8% | 261.6 | 49.3 | +0.1% | 67.2 | +0.9% | 72.9 | 22.8 | +0.1% | 27.4 | +1.3% | 31.3 |
+| webster | 210.6 | +5.0% | 341.4 | +39.6% | 290.6 | 68.8 | +0.3% | 83.9 | +0.5% | 103.8 | 27.0 | +0.3% | 43.3 | +2.0% | 37.7 |
+| xml | 312.4 | +20.3% | 681.3 | +33.3% | 504.0 | 124.1 | +0.6% | 165.3 | -0.4% | 188.4 | 41.2 | +0.5% | 80.3 | +1.9% | 62.9 |
+| nci | 385.9 | +7.6% | 888.3 | +40.6% | 651.4 | 130.0 | +1.1% | 213.8 | +1.7% | 236.7 | 29.9 | +0.8% | 71.2 | +2.5% | 61.8 |
+| mozilla | 208.6 | +1.5% | 319.1 | +18.8% | 274.5 | 74.6 | +3.0% | 93.1 | +3.3% | 120.0 | 19.1 | +3.0% | 27.7 | +1.7% | 30.6 |
+| samba | 258.8 | +3.2% | 439.0 | +28.6% | 364.7 | 89.0 | +1.8% | 118.5 | +3.1% | 134.1 | 30.5 | +2.0% | 50.6 | +2.6% | 45.4 |
+| x-ray | 139.4 | +0.6% | 156.5 | +25.1% | 163.5 | 69.5 | +4.3% | 74.4 | +4.7% | 120.2 | 67.4 | +4.5% | 43.3 | -0.5% | 101.6 |
+
+Goose beats zlib-ng's rate on `x-ray` at level 9, 67.4 MB/s against 43.3, and loses
+every other rate. Against libdeflate it's 1.17 to 1.69 times slower at level 1, 1.48
+to 1.82 at level 6, and 1.37 to 2.07 at level 9, for output 0.6 to 20.3 percent
+larger at level 1 and 0.1 to 4.5 percent at levels 6 and 9. Against the `43cb937`
+run, a session earlier, level 1 is 2 to 9 percent faster, level 6 3 to 15 percent,
+and level 9 2 to 16 percent, most on `x-ray`. Level 0 is 4.9 to 7.0 times slower than
+both libraries: CRC-32 at 2.6 to 2.8 GB/s against their carryless multiply.
+
+Task 005's steps 2 and 3, `simd fn` and the hand-fixed C against libdeflate, are in
+[results-history.md](results-history.md#task-005-steps-2-and-3-simd-fn-and-the-codegen-ceiling).
 

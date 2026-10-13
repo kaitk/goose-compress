@@ -1,21 +1,22 @@
 # Development
 
 The package is Goose with no C, so it builds wherever the Goose compiler does. Tests and
-benchmarks have run on macOS and on Windows under Git Bash (2026-10-12); they need a
-POSIX shell, Python 3, and `gzip`, and should run unchanged on Linux. The zstd benchmark
-needs Go too, and has run on macOS only (2026-10-13).
+benchmarks have run on macOS and on Windows under Git Bash (2026-10-13); they need a
+POSIX shell, Python 3, `gzip`, the `zstd` command, and Go for `bench/build.sh`, and
+should run unchanged on Linux. The zstd benchmark has run on macOS only (2026-10-13).
 
 ## Toolchain
 
-| Tool | macOS (2026-10-13) | Windows (2026-10-12) | For |
+| Tool | macOS (2026-10-13) | Windows (2026-10-13) | For |
 |---|---|---|---|
-| Goose compiler | `a6249a4`, the pin in `README.md` | `c38dc0f` | everything |
+| Goose compiler | `a6249a4`, the pin in `README.md` | `a6249a4` | everything |
 | OS | macOS 26.3.1, Apple M1 Pro | Windows 11 Pro 10.0.26200, Ryzen 7 5800X3D | |
 | C compiler | Apple clang 21.0.0 (`clang-2100.0.123.102`) | clang 22.1.3 from Visual Studio Build Tools 2026 (18): `clang-cl` for `goose build`, `clang` for `bench/` | `goose build`, `bench/` |
 | CMake | 4.4.4 (Homebrew) | 4.3.1-msvc1 and Ninja 1.13.2, from the Build Tools | building the Goose compiler, libdeflate, zlib-ng, and libzstd |
-| Go | 1.27.2 (Homebrew) | not installed | `bench/klauspost` |
+| Go | 1.27.2 (Homebrew) | 1.27.0 (`winget install GoLang.Go`) | `bench/klauspost` |
 | Python | 3.14.8 (Homebrew) | 3.14.6 (python.org) | `scripts/roundtrip.py`, with its `zlib` module |
 | gzip | Apple gzip 475 | gzip 1.13, from Git for Windows | `scripts/roundtrip.py` |
+| zstd | not recorded | 1.5.7 (`winget install Meta.Zstandard`) | `scripts/roundtrip.py` |
 | Shell, git, curl, unzip, shasum | macOS | Git for Windows 2.45.1 (Git Bash) | `bench/build.sh` |
 
 ## Set up the Goose compiler
@@ -122,8 +123,8 @@ program that imports both builds with one compiler.
 GOOSE=../goose/build-macos/goose scripts/test.sh
 ```
 
-It took about 48 s on the M1 Pro (2026-10-13) and 51 s on the Ryzen under Git Bash,
-where starting a process costs more (2026-10-12, before zstd's tests). A program run
+It took about 48 s on the M1 Pro and 99 s on the Ryzen under Git Bash, where starting
+a process costs more (2026-10-13). A program run
 through TinyCC compiles at `-O1` without a C compiler, so the unit tests start fast;
 `encode` is built with `goose build` because `roundtrip.py` runs it 3,880 times.
 
@@ -252,6 +253,12 @@ build/bench/bench 6 build/bench/corpus/mozilla 20 & sleep 1; sample bench 4 -fil
 - A hot path that is fast on one machine can be slow on the other: measure a change on
   both, or say which one it was measured on.
 - Under zsh, `set -- $v` doesn't split `$v` into words; run such loops with `sh`.
+- On Windows, winget puts Go in `C:\Program Files\Go\bin` and links `zstd` into
+  `%LOCALAPPDATA%\Microsoft\WinGet\Links`, on the `PATH` of shells started after the
+  install only. A Git Bash already open needs both added to its `PATH`.
+- Git Bash turns a `clang-cl` flag such as `/O2` into a path (`C:/Program Files/Git/O2`).
+  From Git Bash, give `clang-cl` its flags with `-` (`-O2`, `-Fe...`) and Windows paths
+  from `cygpath -w`.
 - The zstd 1.5.7 command line compresses with worker threads by default, in `zstd -b`
   too: `zstd -b1` gave `dickens` 681 MB/s, and with `-T1` 421, the rate of libzstd in
   `ref`. Pass `-T1` to compare its rates with one thread's.
