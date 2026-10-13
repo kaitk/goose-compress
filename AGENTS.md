@@ -38,8 +38,9 @@ directory. What only one machine needs, such as where its Goose checkout is, goe
   references into growing arrays, `return ... from` for errors, untyped parameters for
   generics.
 - The package is Goose with no C: hashing, bit-packing, and Huffman tables are the work
-  that measuring Goose is about. C belongs in `bench/` only, as the libraries the package
-  is measured against.
+  that measuring Goose is about. Other languages belong in `bench/` only, as the
+  languages of the libraries the package is measured against: C for libdeflate, zlib-ng,
+  and libzstd, and Go for klauspost/compress.
 
 ## Benchmarks
 

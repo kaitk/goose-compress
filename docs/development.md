@@ -11,7 +11,8 @@ POSIX shell, Python 3, and `gzip`, and should run unchanged on Linux.
 | Goose compiler | `a6249a4`, the pin in `README.md` | `c38dc0f` | everything |
 | OS | macOS 26.3.1, Apple M1 Pro | Windows 11 Pro 10.0.26200, Ryzen 7 5800X3D | |
 | C compiler | Apple clang 21.0.0 (`clang-2100.0.123.102`) | clang 22.1.3 from Visual Studio Build Tools 2026 (18): `clang-cl` for `goose build`, `clang` for `bench/` | `goose build`, `bench/` |
-| CMake | 4.4.4 (Homebrew) | 4.3.1-msvc1 and Ninja 1.13.2, from the Build Tools | building the Goose compiler, libdeflate, and zlib-ng |
+| CMake | 4.4.4 (Homebrew) | 4.3.1-msvc1 and Ninja 1.13.2, from the Build Tools | building the Goose compiler, libdeflate, zlib-ng, and libzstd |
+| Go | 1.27.2 (Homebrew) | not installed | `bench/klauspost` |
 | Python | 3.14.8 (Homebrew) | 3.14.6 (python.org) | `scripts/roundtrip.py`, with its `zlib` module |
 | gzip | Apple gzip 475 | gzip 1.13, from Git for Windows | `scripts/roundtrip.py` |
 | Shell, git, curl, unzip, shasum | macOS | Git for Windows 2.45.1 (Git Bash) | `bench/build.sh` |
@@ -140,21 +141,37 @@ gzip -dc out.gz
   built with CMake in `Release` mode with their default options. Both pick the CPU's
   fastest code at run time, carryless-multiply CRC-32 included. zlib-ng is built with
   its native API (`ZLIB_COMPAT=OFF`).
-- `ref`, from `bench/ref.c`, which compresses a file with either library.
+- libzstd v1.5.7, cloned at that tag and built with CMake from its `build/cmake`
+  directory in `Release` mode, as a static library, with its programs and tests off.
+- `ref`, from `bench/ref.c`, which compresses a file with any of the three. libzstd
+  runs `ZSTD_compress2` with the content checksum on, at its own window, or at the
+  package's 128 KB as `libzstd-w17`.
+- `klauspost`, from the Go module in `bench/klauspost/`, which compresses a file with
+  klauspost/compress at the version its `go.mod` pins, v1.20.3: `EncodeAll` with the
+  checksum on, at the level `zstd.EncoderLevelFromZstd` maps zstd's to, so 1 is
+  `SpeedFastest` and 3 `SpeedDefault`. `go build` fetches the module into Go's module
+  cache. `GO` names the Go toolchain, or `go` on `PATH` without it.
 - `bench`, from `bench/bench.goose`, which compresses a file with the package.
 - The [Silesia corpus](https://sun.aei.polsl.pl/~sdeor/index.php?page=silesia), 211 MB
   in 12 files, from `silesia.zip`, checked against its SHA-256 before it's unzipped.
 
 `bench/run.sh` then prints a Markdown table: for each file and level, each library's
 ratio and its median and best rate over `RUNS` runs. Each run compresses the whole file
-in memory to one gzip stream; reading the file isn't timed.
+in memory to one stream; reading the file isn't timed. `FORMAT=zstd` runs the package
+against libzstd, `libzstd-w17`, and klauspost at levels 1 and 3, in place of gzip
+against zlib-ng and libdeflate.
 
 ```sh
 GOOSE=../goose/build-macos/goose bench/build.sh
 bench/run.sh                                # level 0, 10 runs, 7 Silesia files
 LEVELS="1 6 9" RUNS=5 FILES=dickens bench/run.sh
 FORMAT=zlib bench/run.sh                    # level 0 zlib: a copy and Adler-32
+FORMAT=zstd bench/run.sh                    # zstd levels 1 and 3
 ```
+
+`run.sh` rounds ratios to 3 places. For zstd's 4-place ratios and Silesia totals, run
+`bench`, `ref`, and `klauspost` with `RUNS` 1 and sum their third and fourth fields,
+the input and output sizes.
 
 On Windows, `bench/build.sh` builds with `clang` and Ninja. Put the Build Tools' CMake,
 Ninja, and LLVM on Git Bash's `PATH` first:
@@ -234,3 +251,6 @@ build/bench/bench 6 build/bench/corpus/mozilla 20 & sleep 1; sample bench 4 -fil
 - A hot path that is fast on one machine can be slow on the other: measure a change on
   both, or say which one it was measured on.
 - Under zsh, `set -- $v` doesn't split `$v` into words; run such loops with `sh`.
+- The zstd 1.5.7 command line compresses with worker threads by default, in `zstd -b`
+  too: `zstd -b1` gave `dickens` 681 MB/s, and with `-T1` 421, the rate of libzstd in
+  `ref`. Pass `-T1` to compare its rates with one thread's.

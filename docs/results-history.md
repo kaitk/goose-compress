@@ -792,6 +792,40 @@ alternating, as for step 2, at a load average of 3 to 6:
 reach. Clearing level 3's 384 KB of them made 100 bytes take 6.2 µs at level 3, and
 level 1's 128 KB took about 1.1 µs at step 4.
 
+### zstd against libzstd and klauspost: task 004 step 6
+
+2026-10-13, package at `237de3a`, Goose `a6249a4`. The run against libzstd v1.5.7 and
+klauspost/compress v1.20.3, with its setup, is in
+[results.md](results.md#zstd-levels-1-and-3-at-237de3a). Below is what was measured
+around it.
+
+The `zstd -b` rates quoted in step 5 were multithreaded: the zstd 1.5.7 command line
+compresses with worker threads by default, in `-b` too. `zstd -b1 -i3 --no-check` gave
+`dickens` 681 MB/s, and with `-T1` 421, the rate of libzstd in `bench/ref.c`, 420 MB/s.
+A static libzstd built with its Makefile in place of CMake gave `ref` the same 420.
+Measured with one thread, libzstd's level 1 is 2.3 to 3.2 times faster than the
+package's on six files, where step 5's numbers suggested 5 times on `dickens` and
+`mozilla`.
+
+Where the time goes at level 1 on `webster`, from `sample bench 4` while `bench 1
+webster 30 zstd` ran, and `sample ref 4` while `ref libzstd 1 webster 80 zstd` ran.
+Shares are of each profile's samples, inlined callees counted in their callers; ms/MB
+is the share times each one's time per MB of input from the run (166.0 and 457.5
+MB/s).
+
+| Work | Package | Share | ms/MB | libzstd | Share | ms/MB |
+|---|---|---:|---:|---|---:|---:|
+| Matching | `match_zstd_fast` | 53% | 3.22 | `ZSTD_compressBlock_fast` | 70% | 1.53 |
+| Everything after | `zstd_block`, `put_huff_literals`, `put_seqs`, `write` | 47% | 2.80 | `ZSTD_encodeSequences`, `HIST_count_parallel_wksp`, `HUF_compress1X_usingCTable_internal`, `ZSTD_XXH64_update`, and table builds | 30% | 0.65 |
+
+The package's matcher takes 2.1 times libzstd's time a byte, and the rest 4.3 times.
+Of the package's rest, `zstd_block` (computing and counting each sequence's codes,
+choosing and building tables, and counting the literals) is 23 percent of the
+samples, writing the Huffman literals 11, and writing the sequences 10; libzstd's
+writing of sequences is 13, and counting and coding literals 11. At level 3 on
+`webster`, the package's double-fast matcher is 61 percent of the samples,
+`zstd_block` 19, and the sequences and literals 9 each.
+
 ## AMD Ryzen 7 5800X3D, Windows
 
 - Desktop on an MSI `MS-7A34` board, AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,

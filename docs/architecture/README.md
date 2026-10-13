@@ -11,9 +11,15 @@ until the task named beside it confirms or replaces it.
   `goose-deflate` wouldn't have (2026-10-12).
 - **Pure Goose, not bindings.** The encoders are Goose, not wrappers over zlib-ng or
   libdeflate. Compression is hashing, bit-packing, and Huffman tables, the byte work
-  that measuring Goose is about; libdeflate and zlib-ng are what it's benchmarked
-  against, in `bench/` (2026-10-12). Whether a C-backed encoder is kept beside the Goose
-  one, for comparison inside a program, is open.
+  that measuring Goose is about; libdeflate, zlib-ng, libzstd, and klauspost/compress
+  are what it's benchmarked against, in `bench/` (2026-10-12). Whether a C-backed
+  encoder is kept beside the Goose one, for comparison inside a program, is open.
+- **`bench/` holds each comparison library's own language: C, and Go for
+  klauspost/compress.** klauspost is task 004's model of a zstd encoder written outside
+  C, without assembly, so it shows what a language like Goose can reach; a C port or
+  bindings would measure something else. `bench/klauspost/` is a Go module that pins
+  its version in `go.mod`, and `bench/build.sh` builds it with `go build`. The package
+  itself stays Goose with no C (task 004 step 6, 2026-10-13).
 - **Encoding only.** Decoding is out of scope for now. goose-http doesn't decode request
   bodies, and accepting them needs limits against decompression bombs (2026-10-12).
 - **Bytes in, bytes out, streaming with flush.** A one-shot `compress`, and an `Encoder`
@@ -182,7 +188,12 @@ until the task named beside it confirms or replaces it.
   557,232, and only on inputs past 128 KB; libzstd itself takes a 128 KB window for
   inputs up to 128 KB. Most HTTP responses are smaller than that, and the encoder is
   held per connection slot (task 004 step 2, 2026-10-13,
-  [results](../results-history.md#the-window-and-the-matchers-parameters)).
+  [results](../results-history.md#the-window-and-the-matchers-parameters)). Confirmed
+  against libzstd built in `bench/` (task 004 step 6, 2026-10-13,
+  [results](../results.md#zstd-levels-1-and-3-at-237de3a)): with the same 128 KB
+  window, Silesia's output is 5.0 percent smaller than libzstd's at level 1 and 2.3
+  percent smaller at level 3. Level 3's 4.2 percent over libzstd's full 2 MB window is
+  all the window's.
 - **A zstd block is matched once it's whole**, as libzstd's streaming API does: 128 KB
   of input past the last block, or the input held at a flush or finish. A match ends at
   the block's end, so blocks and matches don't depend on how writes split the input,
@@ -211,8 +222,8 @@ until the task named beside it confirms or replaces it.
   at the next position. Silesia's output went from level 1's 0.3378 of its input to
   0.3251, against `zstd -3`'s 0.3124 with its 2 MB window and 0.3335 with a 128 KB one
   (`--zstd=wlog=17`). It's 2 to 24 percent slower than level 1 on six of seven files,
-  and 80 percent slower on `x-ray`, where libzstd's level 3 is 84 percent slower than
-  its level 1. A 2^17-entry long table, libzstd's for larger inputs, made the output
+  and 80 percent slower on `x-ray`, where libzstd's level 3 is 70 percent slower than
+  its level 1 with one thread (step 6). A 2^17-entry long table, libzstd's for larger inputs, made the output
   0.15 percent smaller for 256 KB more; a 6-byte short hash made it 2.0 percent larger,
   and a 4-byte one left it the same as 5. The long table adds 262,144 bytes, for a
   `ZstdEncoder` of 879,875 (task 004 step 5, 2026-10-13,
@@ -227,7 +238,10 @@ until the task named beside it confirms or replaces it.
 - **zstd's levels, 1 to 22, each run the nearest level built**: level 1 the fast
   matcher, and 2 and up the double-fast, level 3, as libzstd's level 2 does for inputs
   up to 256 KB. Higher levels wait on a measurement (task 004, 2026-10-12; level 3
-  measured in step 5, 2026-10-13).
+  measured in step 5, 2026-10-13). Measured against libzstd and klauspost/compress in
+  step 6 (2026-10-13), the levels stand: level 3 writes 3.8 percent less than level 1,
+  as libzstd's writes 9.7 percent less and klauspost's SpeedDefault 8.5 percent less
+  than SpeedFastest, each with a larger window.
 - **Repeat offsets are resolved when a block is coded**, from the offsets a decoder
   holds after the last compressed block. The matcher keeps distances and its own last
   two offsets; a block written raw leaves the decoder's offsets as they were, as RFC

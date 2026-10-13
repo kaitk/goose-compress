@@ -1,6 +1,7 @@
 # Results
 
-The package against libdeflate and zlib-ng: each machine's latest run. Each machine has
+The package against libdeflate and zlib-ng, and in zstd against libzstd and
+klauspost/compress: each machine's latest run. Each machine has
 a section of its own, which starts with how the machine and its tools were set up;
 numbers from different machines aren't compared. How to run them is in
 [development.md](development.md#benchmark). Earlier runs, level 0, small inputs, and
@@ -59,6 +60,71 @@ slower than zlib-ng and 1.2 to 1.5 times slower than libdeflate; at level 6, 1.2
 zlib-ng's on all seven files and 0.5 to 20 percent larger than libdeflate's; level 6
 is smaller than zlib-ng's on five files, the same on `webster`, and 1 percent larger
 on `xml`, and 0 to 4 percent larger than libdeflate's.
+
+### zstd levels 1 and 3 at `237de3a`
+
+2026-10-13, task 004 step 6, package at `237de3a`, Goose `a6249a4`, `goose build`
+defaults (`-O2`) with Apple clang 21.0.0. Against:
+
+- libzstd v1.5.7, a CMake `Release` build (`-O3`) with its default options, through
+  `bench/ref.c` at `-O2`, same compiler: `ZSTD_compress2` with `ZSTD_c_checksumFlag`
+  on, at its own window for the input (512 KB at level 1, 2 MB at level 3), and as
+  `libzstd-w17` at the package's 128 KB (`ZSTD_c_windowLog` 17).
+- klauspost/compress v1.20.3, built by Go 1.27.2 (Homebrew) with `go build` defaults,
+  through `bench/klauspost`: `EncodeAll` with `WithEncoderCRC(true)`, at `SpeedFastest`
+  against level 1 and `SpeedDefault` against level 3, with its default window.
+
+Every library writes the content checksum and compresses one-shot, the whole file in
+memory. Desktop apps (a terminal, Firefox) ran beside the run at a load average of 4 to
+10, and no other benchmark.
+
+Rate, MB/s, `FORMAT=zstd bench/run.sh`: 10 runs per cell, the median. The run went
+twice; each cell's medians agreed within 0.7 percent, except klauspost's `SpeedDefault`,
+within 4.6. The table is the first.
+
+| File | MB | Level 1 goose | libzstd | libzstd, 128 KB | klauspost | Level 3 goose | libzstd | libzstd, 128 KB | klauspost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 10.2 | 132.4 | 419.5 | 418.8 | 212.5 | 113.9 | 226.8 | 233.5 | 188.0 |
+| webster | 41.5 | 166.0 | 457.5 | 463.2 | 270.2 | 140.7 | 283.6 | 309.6 | 235.4 |
+| xml | 5.3 | 344.9 | 859.9 | 835.3 | 553.9 | 319.9 | 698.5 | 640.8 | 501.4 |
+| nci | 33.6 | 450.1 | 1,013.9 | 1,071.6 | 722.7 | 429.9 | 913.9 | 899.3 | 684.5 |
+| mozilla | 51.2 | 224.5 | 578.6 | 568.9 | 374.8 | 169.6 | 382.1 | 397.3 | 317.7 |
+| samba | 21.6 | 259.0 | 648.0 | 644.5 | 426.1 | 224.4 | 467.3 | 467.4 | 392.6 |
+| x-ray | 8.5 | 600.5 | 702.4 | 771.9 | 2,302.7 | 124.2 | 212.4 | 269.3 | 175.0 |
+
+The package loses every rate. At level 1, libzstd is 2.3 to 3.2 times faster on six
+files and 1.2 times on `x-ray`; klauspost is 1.6 to 1.7 times faster on six and 3.8
+times on `x-ray`, whose literals it leaves raw. At level 3, libzstd is 2.0 to 2.3 times
+faster on six files and 1.7 times on `x-ray`; klauspost is 1.4 to 1.9 times. A 128 KB
+window leaves libzstd's rate within 10 percent of its own window's either way, except on
+`x-ray` at level 3, 27 percent faster.
+
+Ratio, output over input, on the 12 Silesia files: `bench`, `ref`, and `klauspost` run
+once on each file. The total is all 12 files' output over their input.
+
+| File | Level 1 goose | libzstd | libzstd, 128 KB | klauspost | Level 3 goose | libzstd | libzstd, 128 KB | klauspost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 0.3955 | 0.4181 | 0.4309 | 0.3992 | 0.3781 | 0.3594 | 0.3955 | 0.3642 |
+| webster | 0.3201 | 0.3295 | 0.3410 | 0.3237 | 0.3045 | 0.2918 | 0.3187 | 0.2945 |
+| xml | 0.1417 | 0.1297 | 0.1491 | 0.1302 | 0.1341 | 0.1189 | 0.1409 | 0.1205 |
+| nci | 0.0873 | 0.0849 | 0.0898 | 0.0890 | 0.0866 | 0.0845 | 0.0919 | 0.0854 |
+| mozilla | 0.3848 | 0.3899 | 0.3979 | 0.3828 | 0.3757 | 0.3559 | 0.3742 | 0.3660 |
+| samba | 0.2537 | 0.2540 | 0.2701 | 0.2485 | 0.2459 | 0.2293 | 0.2564 | 0.2305 |
+| x-ray | 0.7978 | 0.7991 | 0.7995 | 0.9896 | 0.7407 | 0.7181 | 0.7497 | 0.7444 |
+| mr | 0.3680 | 0.3825 | 0.3842 | 0.3786 | 0.3582 | 0.3558 | 0.3637 | 0.3606 |
+| ooffice | 0.5543 | 0.5841 | 0.5866 | 0.5595 | 0.5262 | 0.5081 | 0.5270 | 0.5184 |
+| osdb | 0.3492 | 0.3698 | 0.4018 | 0.3534 | 0.3481 | 0.3472 | 0.3806 | 0.3475 |
+| reymont | 0.3173 | 0.3243 | 0.3383 | 0.3266 | 0.3007 | 0.2924 | 0.3141 | 0.2959 |
+| sao | 0.8200 | 0.8618 | 0.8703 | 0.8607 | 0.7808 | 0.7622 | 0.7664 | 0.7951 |
+| total | 0.3378 | 0.3455 | 0.3556 | 0.3478 | 0.3251 | 0.3121 | 0.3326 | 0.3184 |
+
+At level 1 the package's output is the smallest in total: 2.2 percent smaller than
+libzstd's with its 512 KB window, 5.0 percent smaller than with 128 KB, and 2.9 percent
+smaller than klauspost's. It's larger than libzstd's on `xml` and `nci`. At level 3 it's
+4.2 percent larger than libzstd's and 2.1 percent larger than klauspost's, and 2.3
+percent smaller than libzstd's with the same 128 KB window: the window is the whole of
+level 3's gap. Where the time goes is in
+[results-history.md](results-history.md#zstd-against-libzstd-and-klauspost-task-004-step-6).
 
 ## AMD Ryzen 7 5800X3D, Windows
 

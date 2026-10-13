@@ -20,7 +20,7 @@ shortest.
 | 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.05 to 1.7 times slower than zlib-ng and libdeflate at levels 1 and 6 on an M1 Pro, 1.2 to 2.3 times on a Ryzen ([results](docs/results.md)). |
 | 🟢 | zlib (HTTP's `deflate`) | The same DEFLATE stream as gzip, with the zlib header and Adler-32. |
 | 🟢 | Raw DEFLATE | The same stream with no wrapper. |
-| 🟡 | zstd | Levels 1 and 3, libzstd's fast and double-fast matchers, into compressed blocks with Huffman literals and FSE tables chosen per block; levels 2 and up run level 3. Silesia comes to 0.3378 of its size at level 1 and 0.3251 at level 3, against `zstd -1`'s 0.3457 and `zstd -3`'s 0.3124. Speed against libzstd is next (task 004). |
+| 🟢 | zstd | Levels 1 and 3, libzstd's fast and double-fast matchers, into compressed blocks with Huffman literals and FSE tables chosen per block; levels 2 and up run level 3. Silesia comes to 0.3378 of its size at level 1 and 0.3251 at level 3, against libzstd's 0.3455 and 0.3121. 2.0 to 3.2 times slower than libzstd and 1.6 to 1.9 times slower than klauspost/compress on six files of seven, on an M1 Pro ([results](docs/results.md#zstd-levels-1-and-3-at-237de3a)). |
 | 🔴 | Brotli | Out of scope: HTTP servers serve it precompressed (task 002). |
 | 🔴 | Decoding | Out of scope for now. |
 
@@ -121,8 +121,9 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
 
 ## Benchmarks
 
-Against libdeflate and zlib-ng, built in release mode: [docs/results.md](docs/results.md).
-On an M1 Pro, with seven Silesia files, at `ce13855`:
+Against libdeflate, zlib-ng, and libzstd, built in release mode, and klauspost/compress
+in Go: [docs/results.md](docs/results.md). On an M1 Pro, with seven Silesia files, at
+`ce13855`:
 
 - Level 0 stores at 2.8 GB/s (on `dickens` and `x-ray`), against zlib-ng's 7 GB/s and
   libdeflate's 21-32 GB/s.
@@ -135,6 +136,17 @@ On an M1 Pro, with seven Silesia files, at `ce13855`:
   1.7 times slower than libdeflate, and faster than zlib-ng on `x-ray` (73 MB/s
   against 65). Its output is smaller than zlib-ng's on five files, the same on one,
   and 1 percent larger on `xml`; it's 0 to 4 percent larger than libdeflate's.
+
+zstd on the same machine and files, at `237de3a`, against libzstd v1.5.7 and
+klauspost/compress v1.20.3 (`SpeedFastest` and `SpeedDefault`), all with the checksum:
+
+- Level 1 compresses 132-600 MB/s, 2.3 to 3.2 times slower than libzstd and 1.6 to 1.7
+  times slower than klauspost on six files; on `x-ray`, 1.2 and 3.8 times. Its
+  output on all 12 Silesia files is 2.2 percent smaller than libzstd's and 2.9 percent
+  smaller than klauspost's.
+- Level 3 compresses 114-430 MB/s, 1.7 to 2.3 times slower than libzstd and 1.4 to 1.9
+  times slower than klauspost. Its output is 4.2 percent larger than libzstd's, with
+  its 2 MB window, and 2.3 percent smaller with the same 128 KB window.
 
 On a Ryzen 7 5800X3D under Windows, with the same files and output, at `43cb937`:
 
@@ -156,8 +168,8 @@ and dynamic blocks by bit count with its tie-breaks, the way it limits code leng
 from Moffat and Katajainen's in-place algorithm ("In-Place Calculation of
 Minimum-Redundancy Codes", 1995). libdeflate
 ([ebiggers/libdeflate](https://github.com/ebiggers/libdeflate)) and zlib-ng
-([zlib-ng/zlib-ng](https://github.com/zlib-ng/zlib-ng)) are the benchmark's
-competitors; when the package takes an idea from either, this section names it. From
+([zlib-ng/zlib-ng](https://github.com/zlib-ng/zlib-ng)) are the benchmark's DEFLATE
+competitors, and libzstd and klauspost/compress its zstd ones; when the package takes an idea from either, this section names it. From
 libdeflate: hash chains searched newest first, with a candidate's 4 hashed bytes and
 the byte at the best length compared before it's extended (`hc_matchfinder`); lazy
 and lazy2 matching, with its measure of a better match; each level's search depth,
@@ -201,7 +213,8 @@ zstd_fse.goose       zstd's FSE tables, normalized counts, and table description
 checksum.goose       CRC-32, Adler-32, and XXH64
 test/                unit tests, and encode.goose, which scripts/roundtrip.py drives
 scripts/             test scripts
-bench/               the C harness for libdeflate and zlib-ng, the Goose one, and scripts
+bench/               the C harness for libdeflate, zlib-ng, and libzstd, the Go one for
+                     klauspost/compress, the Goose one, and scripts
 docs/                architecture, development setup, results, Goose findings
 tasks/               task tracking (tasks/README.md)
 ```

@@ -1,6 +1,6 @@
 # 004: zstd
 
-Status: in-progress
+Status: done
 
 A Zstandard encoder (RFC 8878) in Goose, in this package, for HTTP's `Content-Encoding:
 zstd` (RFC 9659): Chrome since 123 and Firefox since 126 accept it, and Safari partly
@@ -38,7 +38,8 @@ after those are measured. This task follows that order.
 ## Proposed decisions
 
 Recorded in `docs/architecture/README.md`. Step 1 settled all but the window and the
-levels; step 2 kept the 128 KB window, and step 5 settled the levels:
+levels; step 2 kept the 128 KB window, step 5 settled the levels, and step 6 confirmed
+both against libzstd and klauspost:
 
 - **`compress::ZSTD` is a fourth format for `compress`**, so goose-http picks an
   encoding with one argument. The stream is a `ZstdEncoder` of its own, with
@@ -85,11 +86,12 @@ levels; step 2 kept the 128 KB window, and step 5 settled the levels:
 - [x] Step 3: Huffman literals, passing the same tests
 - [x] Step 4: FSE tables per block, passing the same tests, with a fuzz run
 - [x] Step 5: level 3, passing the same tests
-- [ ] Step 6: libzstd built in `bench/` in release mode, and rate and ratio at levels
-      1 and 3 recorded in `docs/results-history.md` with how they were measured
-- [ ] Decisions above confirmed or replaced in `docs/architecture/README.md`, and the
+- [x] Step 6: libzstd built in `bench/` in release mode, and rate and ratio at levels
+      1 and 3 recorded in `docs/results.md`, and what was measured around them in
+      `docs/results-history.md`, with how they were measured
+- [x] Decisions above confirmed or replaced in `docs/architecture/README.md`, and the
       README's status table and API updated
-- [ ] Findings recorded in `docs/goose-findings.md`
+- [x] Findings recorded in `docs/goose-findings.md`: steps 1 to 6 found none new
 
 ## Step 1
 
@@ -178,3 +180,27 @@ makes 1 in 4 cases zstd at level 3, all passed. A unit test checks the exact byt
 5-byte matches that level 3 finds and level 1 misses, and that a reset stream comes
 out as from a new encoder after streams at levels 3 and 1. Step 6 should compare
 level 1's and level 3's rates above with libzstd's built in `bench/`.
+
+## Step 6
+
+Done (2026-10-13). `bench/build.sh` builds libzstd v1.5.7 in `Release` mode, which
+`bench/ref.c` runs with the checksum on, at its own window and at 128 KB, and
+`bench/klauspost`, a Go program running klauspost/compress v1.20.3. `FORMAT=zstd
+bench/run.sh` runs all of them at levels 1 and 3. Go in `bench/` is a new decision,
+recorded in the architecture doc and `AGENTS.md`.
+
+On the M1 Pro, the package loses every rate
+([results](../docs/results.md#zstd-levels-1-and-3-at-237de3a)). At level 1, libzstd is
+2.3 to 3.2 times faster on six of seven files and klauspost 1.6 to 1.7 times; on
+`x-ray`, 1.2 and 3.8 times. At level 3, libzstd is 2.0 to 2.3 times faster on six
+files and 1.7 on `x-ray`, and klauspost 1.4 to 1.9 times. The 12 Silesia files come to
+0.3378 of their size at level 1, smaller than libzstd's 0.3455 and klauspost's 0.3478;
+and 0.3251 at level 3, larger than libzstd's 0.3121 and klauspost's 0.3184, and smaller
+than libzstd's 0.3326 with the same 128 KB window.
+
+Step 5's `zstd -b` rates, which made libzstd's level 1 look 5 times faster, were
+multithreaded: the zstd command line uses worker threads by default. On `webster` at
+level 1, the package's matcher takes 2.1 times libzstd's time a byte, and the coding
+after it 4.3 times ([profile](../docs/results-history.md#zstd-against-libzstd-and-klauspost-task-004-step-6)).
+Nothing was optimized in this step. The traps steps 1 to 6 added to
+`docs/development.md` are the spec's defined behavior (§6.2, §7.2), not findings.
