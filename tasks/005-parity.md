@@ -13,11 +13,14 @@ at 0.51 to 0.63 of its rate, 11 to 28 percent slower than before
 ([results](../docs/results-history.md#task-005-level-1-in-libdeflates-2-entry-buckets-at-24ac46b)).
 Next:
 
-- Codegen, for levels 1 and 6: the hand-fixed C of the same matchers runs 10 to 14
-  percent faster than the Goose build at level 6 and up to 23 percent at level 1, from
-  bounds checks and state kept through `z`. Then `end_block`, 11.2 ms of a level 1
-  `dickens` run against libdeflate's 7.2. The `build/task005/port/` prototypes and
-  sampler (`CLAUDE.local.md`) are the starting point.
+- Codegen, for levels 1 and 6: `8ec4538` extends matches 8 bytes at a time (+0.8 to
+  +9.0 percent everywhere); level 9 is at libdeflate's rate on six files. The window
+  reads keep their bounds checks, which the compiler can't drop
+  ([findings](../docs/goose-findings.md#bounds-check-elimination-doesnt-combine-facts-about-a-difference)),
+  and strict aliasing gave at most 3 percent. Next is `end_block` and the per-symbol
+  path: `end_block` takes 11.2 ms of a level 1 `dickens` run against libdeflate's 7.2,
+  and level 1 is the furthest behind, at 0.56 to 0.66. The `build/task005/port/`
+  prototypes and sampler (`CLAUDE.local.md`) are the starting point.
 - libdeflate's search costs less per position on `x-ray` with the same work, at both
   levels.
 - libdeflate's 3-byte matches and adaptive minimum length bring output within 1

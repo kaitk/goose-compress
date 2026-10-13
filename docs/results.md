@@ -205,3 +205,15 @@ than `9f7a539` and 0.51 to 0.63 of libdeflate's rate. The same matcher in hand-f
 loses at most 2.4 percent on four files, so the loss is taken as codegen to win back
 ([history](results-history.md#task-005-level-1-in-libdeflates-2-entry-buckets-at-24ac46b)).
 
+### Levels 1, 6, and 9 at `8ec4538`
+
+2026-10-13, task 005: matches extended 8 bytes at a time, measured as at `9f7a539`,
+with the same output. Every cell is 0.8 to 9.0 percent faster than `24ac46b`
+([history](results-history.md#task-005-8-byte-match-extension-at-8ec4538)).
+
+| Level | goose MB/s | libdeflate MB/s | goose / libdeflate |
+|---:|---:|---:|---:|
+| 1 | 107–363 | 163–650 | 0.56–0.66 |
+| 6 | 64–196 | 72–232 | 0.74–0.88 |
+| 9 | 31–86 | 31–101 | 0.85–1.12 |
+

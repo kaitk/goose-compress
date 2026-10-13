@@ -1214,3 +1214,51 @@ shift it; libdeflate's own loop spends 15.5 percent on the same load. libdeflate
 slower in a quick check (one `bench 1 FILE 3` each). The rest of `p7`'s gap to
 libdeflate is spread: its matcher takes 42.6 ms of a `dickens` run where libdeflate's
 takes 34, and `end_block` 11.2 ms against `deflate_flush_block`'s 7.2.
+
+### Task 005: 8-byte match extension, at `8ec4538`
+
+2026-10-13, task 005, Goose `a6249a4`, same machine, compilers, libraries, and method
+as `24ac46b`'s run above, at levels 1, 6, and 9, at 4 percent CPU load before the run.
+`8ec4538` extends a match 8 bytes at a time after one byte, finding the first that
+differs with a de Bruijn multiply, in an `inline fn match_len`. It writes the same
+bytes as `24ac46b` on all 21 cells.
+
+| Level | File | `24ac46b` | `8ec4538` | change | libdeflate | `8ec4538` / libdeflate |
+|---:|---|---:|---:|---:|---:|---:|
+| 1 | dickens | 158.6 | 162.4 | +2.4% | 261.5 | 0.62 |
+| | webster | 174.4 | 182.1 | +4.4% | 292.4 | 0.62 |
+| | xml | 283.0 | 291.2 | +2.9% | 503.1 | 0.58 |
+| | nci | 333.6 | 362.9 | +8.8% | 649.5 | 0.56 |
+| | mozilla | 172.6 | 177.0 | +2.5% | 274.3 | 0.65 |
+| | samba | 218.0 | 229.3 | +5.2% | 369.9 | 0.62 |
+| | x-ray | 103.5 | 107.1 | +3.5% | 163.0 | 0.66 |
+| 6 | dickens | 61.4 | 63.8 | +3.9% | 72.4 | 0.88 |
+| | webster | 82.6 | 83.3 | +0.8% | 102.7 | 0.81 |
+| | xml | 149.6 | 158.4 | +5.9% | 185.1 | 0.86 |
+| | nci | 180.8 | 196.0 | +8.4% | 232.4 | 0.84 |
+| | mozilla | 96.0 | 98.1 | +2.2% | 118.6 | 0.83 |
+| | samba | 111.2 | 116.1 | +4.4% | 133.8 | 0.87 |
+| | x-ray | 88.0 | 88.8 | +0.9% | 119.4 | 0.74 |
+| 9 | dickens | 30.3 | 30.9 | +2.0% | 31.1 | 0.99 |
+| | webster | 36.2 | 36.9 | +1.9% | 37.1 | 0.99 |
+| | xml | 61.1 | 63.4 | +3.8% | 62.2 | 1.02 |
+| | nci | 57.9 | 63.1 | +9.0% | 62.1 | 1.02 |
+| | mozilla | 31.1 | 31.7 | +1.9% | 30.6 | 1.04 |
+| | samba | 48.7 | 50.6 | +3.9% | 45.2 | 1.12 |
+| | x-ray | 84.3 | 86.0 | +2.0% | 100.8 | 0.85 |
+
+Level 9 now runs at 0.99 to 1.12 of libdeflate's rate on six files of seven.
+
+Tried with it, in quick checks (one `bench LEVEL FILE 3` each, on `dickens`, `nci`,
+`x-ray`, and `mozilla`), and not kept:
+
+- `match_len` as a plain `fn`: clang stopped inlining it, and level 6 lost 5 to 7
+  percent on `x-ray`.
+- `load32` as an `inline fn`: within 1 percent, or up to 4 percent slower at level 9.
+  Its slice check stays at every inlined call
+  ([findings](goose-findings.md#bounds-check-elimination-doesnt-combine-facts-about-a-difference)).
+- `walk` with the distance test as `d >= 1 && d <= reach`, `reach <= p` asserted, and
+  the window sliced once: no check dropped, so no build was measured.
+- The generated C compiled with `/clang:-fstrict-aliasing`, which `clang-cl` leaves off:
+  levels 6 and 9 0.1 to 3.2 percent faster, level 1 -5.5 to +0.7 percent. The encoder
+  state's reloads aren't mostly an aliasing matter.
