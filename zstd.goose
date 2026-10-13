@@ -199,9 +199,10 @@ fn next_block(e: ZstdEncoder&, out: u8[>..]&, end: i64, last: bool) {
     e.pos = stop;
 }
 
+// `% ZSTD_HASH_SIZE` lets the compiler drop the table's bounds check.
 fn hash_zstd(v: u64) -> i64 {
-    return (((v << (64 - 8 * ZSTD_HASH_BYTES)) * 0x9E3779B97F4A7C15) >> (64 - ZSTD_HASH_LOG))
-        as! i64;
+    return ((((v << (64 - 8 * ZSTD_HASH_BYTES)) * 0x9E3779B97F4A7C15) >> (64 - ZSTD_HASH_LOG))
+        % ZSTD_HASH_SIZE) as! i64;
 }
 
 // Level 1, after libzstd's ZSTD_fast: probes two positions a step, one hash
@@ -275,12 +276,12 @@ fn match_zstd_fast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
 }
 
 fn hash_short(v: u64) -> i64 {
-    return (((v << (64 - 8 * ZSTD_SHORT_BYTES)) * 0x9E3779B97F4A7C15) >> (64 - ZSTD_HASH_LOG))
-        as! i64;
+    return ((((v << (64 - 8 * ZSTD_SHORT_BYTES)) * 0x9E3779B97F4A7C15) >> (64 - ZSTD_HASH_LOG))
+        % ZSTD_HASH_SIZE) as! i64;
 }
 
 fn hash_long(v: u64) -> i64 {
-    return ((v * 0x9E3779B97F4A7C15) >> (64 - ZSTD_LONG_LOG)) as! i64;
+    return (((v * 0x9E3779B97F4A7C15) >> (64 - ZSTD_LONG_LOG)) % ZSTD_LONG_SIZE) as! i64;
 }
 
 // Level 3, after libzstd's ZSTD_dfast: each position checks the last offset
