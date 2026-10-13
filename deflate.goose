@@ -423,7 +423,11 @@ inline fn match_len(win: const u8[:], a: i64, b: i64, most: i64) -> i64 {
     guard x.len > 0 && x[0] == y[0] else { return 0; }
     var n = 1;
     while n + 8 <= x.len {
-        let d = load64(x, n) ^ load64(y, n);
+        // Two 4-byte loads, not load64's one 8-byte load and not std's ctz below:
+        // either costs the chain search 3 to 6 percent on `x-ray` at levels 6
+        // and 9, where zstd_match_len gains from both.
+        let d = (load32(x, n) | (load32(x, n + 4) as u64) << 32) ^
+                (load32(y, n) | (load32(y, n + 4) as u64) << 32);
         // `% 64` lets the compiler drop the table's bounds check.
         if d != 0 { return n + (CTZ64[(((d & (0 - d)) * 0x03F79D71B4CB0A89) >> 58) % 64] >> 3); }
         n += 8;

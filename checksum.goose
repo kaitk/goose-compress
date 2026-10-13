@@ -206,5 +206,8 @@ fn rotl64(v: u64, r: u64) -> u64 {
 }
 
 fn load64(s: const u8[:], i: i64) -> u64 {
-    return load32(s, i) | (load32(s, i + 4) as u64) << 32;
+    let c = s[i..i + 8];
+    return c[0] | (c[1] as u64) << 8 | (c[2] as u64) << 16 | (c[3] as u64) << 24 |
+           (c[4] as u64) << 32 | (c[5] as u64) << 40 | (c[6] as u64) << 48 |
+           (c[7] as u64) << 56;
 }

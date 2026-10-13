@@ -251,7 +251,7 @@ fn match_zstd_fast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
             off2 = off1;
             off1 = d;
         }
-        let len = 4 + match_len(e.win, p - d + 4, p + 4, end - p - 4);
+        let len = 4 + zstd_match_len(e.win,p - d + 4, p + 4, end - p - 4);
         zstd_seq(e, anchor, p - anchor, d, len);
         ip = p + len;
         anchor = ip;
@@ -262,7 +262,7 @@ fn match_zstd_fast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
         // The offset before the last, at once, as a sequence with no
         // literals: a repeat offset.
         while ip <= limit && off2 <= ip && load32(e.win, ip - off2) == load32(e.win, ip) {
-            let n = 4 + match_len(e.win, ip - off2 + 4, ip + 4, end - ip - 4);
+            let n = 4 + zstd_match_len(e.win,ip - off2 + 4, ip + 4, end - ip - 4);
             let t = off2;
             off2 = off1;
             off1 = t;
@@ -324,7 +324,7 @@ fn match_zstd_dfast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
             if off1 <= ip + 1 && load32(e.win, ip + 1 - off1) == load32(e.win, ip + 1) {
                 p = ip + 1;
                 d = off1;
-                len = 4 + match_len(e.win, p - d + 4, p + 4, end - p - 4);
+                len = 4 + zstd_match_len(e.win,p - d + 4, p + 4, end - p - 4);
                 rep = true;
                 break;
             }
@@ -333,7 +333,7 @@ fn match_zstd_dfast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
             if dl >= 1 && dl < ZSTD_WINDOW && dl <= ip && load64(e.win, ip - dl) == load64(e.win, ip) {
                 p = ip;
                 d = dl;
-                len = 8 + match_len(e.win, p - d + 8, p + 8, end - p - 8);
+                len = 8 + zstd_match_len(e.win,p - d + 8, p + 8, end - p - 8);
                 break;
             }
             let cl1 = e.long[hl1];
@@ -341,11 +341,11 @@ fn match_zstd_dfast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
             if ds >= 1 && ds < ZSTD_WINDOW && ds <= ip && load32(e.win, ip - ds) == load32(e.win, ip) {
                 p = ip;
                 d = ds;
-                len = 4 + match_len(e.win, p - d + 4, p + 4, end - p - 4);
+                len = 4 + zstd_match_len(e.win,p - d + 4, p + 4, end - p - 4);
                 let d1 = ((e.base + ip1) as! u32 - cl1) as i64;
                 if d1 >= 1 && d1 < ZSTD_WINDOW && d1 <= ip1 &&
                    load64(e.win, ip1 - d1) == load64(e.win, ip1) {
-                    let n = 8 + match_len(e.win, ip1 - d1 + 8, ip1 + 8, end - ip1 - 8);
+                    let n = 8 + zstd_match_len(e.win,ip1 - d1 + 8, ip1 + 8, end - ip1 - 8);
                     if n > len {
                         p = ip1;
                         d = d1;
@@ -387,7 +387,7 @@ fn match_zstd_dfast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
         e.long[hash_long(load64(e.win, ip - 2))] = (e.base + ip - 2) as! u32;
         e.head[hash_short(load64(e.win, ip - 1))] = (e.base + ip - 1) as! u32;
         while ip <= limit && off2 <= ip && load32(e.win, ip - off2) == load32(e.win, ip) {
-            let n = 4 + match_len(e.win, ip - off2 + 4, ip + 4, end - ip - 4);
+            let n = 4 + zstd_match_len(e.win,ip - off2 + 4, ip + 4, end - ip - 4);
             let t = off2;
             off2 = off1;
             off1 = t;
@@ -404,6 +404,25 @@ fn match_zstd_dfast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
     e.off1 = off1;
     e.off2 = off2;
     return if e.nseq == ZSTD_SEQ_MAX { anchor } else { end };
+}
+
+// DEFLATE's match_len with one 8-byte load and std's ctz, which gain zstd's
+// matchers 5 to 7 percent and cost DEFLATE's (see match_len).
+inline fn zstd_match_len(win: const u8[:], a: i64, b: i64, most: i64) -> i64 {
+    let x = win[a..a + most];
+    let y = win[b..b + most];
+    assert(x.len == y.len);
+    guard x.len > 0 && x[0] == y[0] else { return 0; }
+    var n = 1;
+    while n + 8 <= x.len {
+        let d = load64(x, n) ^ load64(y, n);
+        if d != 0 { return n + (ctz(d) >> 3); }
+        n += 8;
+    }
+    for i in n..x.len {
+        if x[i] != y[i] { return i; }
+    }
+    return x.len;
 }
 
 // Stores a sequence: the literals win[from..from + lits], then a match.
