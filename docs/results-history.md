@@ -483,6 +483,97 @@ Two entries reach libdeflate's level-1 ratio, with 0.4 to 17.4 percent less outp
 and cost 12 to 29 percent of the rate. Not kept: this task is about rate, and level 2
 already gives more ratio for less rate (`dickens` 0.398 at 103 MB/s).
 
+### zstd level 1: task 004 step 2
+
+2026-10-13, Goose `a6249a4`, `goose build` defaults with Apple clang 21.0.0. Level 1
+matches with one probe a position into compressed blocks, with raw literals and the
+predefined FSE tables. `bench/bench.goose` compresses each file one-shot, whole, in
+memory, with `compress::compress(data, out, compress::ZSTD, 1)`. The machine was
+otherwise idle (`ps`). libzstd isn't in `bench/` yet (step 6), so ratios are compared
+with the zstd 1.5.7 command line (Homebrew) and rates with step 1's encoder.
+
+Ratio, output over input, on the 12 Silesia files, `bench 1 FILE 1 zstd` against
+`zstd -1 --no-check -c FILE`, and against the same with `--no-compress-literals`,
+which leaves libzstd's literals raw as here. The total is all 12 files' output over
+their input.
+
+| File | goose | zstd -1 | zstd -1, raw literals |
+|---|---:|---:|---:|
+| dickens | 0.5513 | 0.4182 | 0.5752 |
+| webster | 0.4287 | 0.3297 | 0.4277 |
+| xml | 0.1884 | 0.1300 | 0.1576 |
+| nci | 0.1298 | 0.0851 | 0.1037 |
+| mozilla | 0.4558 | 0.3901 | 0.4306 |
+| samba | 0.3150 | 0.2546 | 0.2960 |
+| x-ray | 0.9972 | 0.7992 | 0.9994 |
+| mr | 0.5238 | 0.3829 | 0.5165 |
+| ooffice | 0.6522 | 0.5841 | 0.6847 |
+| osdb | 0.4174 | 0.3697 | 0.4133 |
+| reymont | 0.4250 | 0.3245 | 0.3825 |
+| sao | 0.8784 | 0.8617 | 0.9045 |
+| total | 0.4246 | 0.3457 | 0.4127 |
+
+With literals raw on both sides, the output is 2.9 percent larger than libzstd's in
+total, from 4.7 percent smaller (`ooffice`) to 25 percent larger (`nci`). libzstd
+still codes its sequences with FSE tables built per block (step 4), from a 512 KB
+window, and Huffman literals (step 3) take the rest of the gap.
+
+Rate, MB/s, `bench 1 FILE 10 zstd`, 5 alternating rounds of the two builds, the
+median of each round's 10 runs; the rounds varied by under 1 percent.
+
+| File | Step 1 (raw blocks) | Step 2 |
+|---|---:|---:|
+| dickens | 8,652 | 168.7 |
+| webster | 8,730 | 208.9 |
+| xml | 8,909 | 421.3 |
+| nci | 8,715 | 559.9 |
+| mozilla | 8,727 | 292.4 |
+| samba | 8,755 | 322.5 |
+| x-ray | 8,809 | 2,278.6 |
+
+Step 1 copies and hashes its input. Step 2 spends about two thirds of its time in the
+matcher and a quarter coding sequences (`sample` on `webster`). `x-ray`, which barely
+compresses, runs fast because the step grows over input that doesn't match.
+
+#### The window and the matcher's parameters
+
+The same ratio command on the 12 files, one constant changed at a time from the build
+above (128 KB window, 2^15 hash entries of 6 bytes, step growing by 1 every 2^7
+bytes without a match), and rates from 3 alternating rounds of `bench 1 FILE 5 zstd`
+on 7 files. `ZstdEncoder` sizes are from its C layout: the window buffer is the
+window, a block, and 32 KB.
+
+| Build | Bytes held | Total ratio | Rate against the build above |
+|---|---:|---:|---|
+| 128 KB window (kept) | 557,232 | 0.4246 | |
+| 256 KB window | 688,304 | 0.4188 | +1 to +11 percent, `nci` -2, `x-ray` -43 |
+| 512 KB window | 950,448 | 0.4159 | +2 to +16 percent, `nci` -4, `x-ray` -51 |
+| 2^14 hash entries | 491,696 | 0.4319 | not run |
+| 5-byte hash | 557,232 | 0.4174 | -2 to -9 percent, `x-ray` -88 |
+| 7-byte hash | 557,232 | 0.4357 | not run |
+| Step grows every 2^6 bytes | 557,232 | 0.4252 | within 3 percent, `x-ray` +170 |
+| Step grows every 2^8 bytes | 557,232 | 0.4242 | within 3 percent, `x-ray` -73 |
+
+A larger window shrinks output 1.4 percent at 256 KB and 2.0 percent at 512 KB (`xml`
+7 and 9 percent, `dickens` 2 and 2.5), but only on inputs past 128 KB. Kept at 128 KB
+([architecture](architecture/README.md)). The 5-byte hash's gain is almost all
+`x-ray` (0.927 against 0.997), whose literals step 3 will code. On the text files
+its output is within 3 percent either way, and it's slower.
+
+Computing an upper bound of the sequences' bits, so each block is written without the
+pass that counts them, was 2 to 3 percent slower on 5 files: the bound needs each
+sequence's codes in the forward pass. Not kept.
+
+`compress::compress` on the first N bytes of `dickens`, level 1, best of 5 averages of
+20,000,000 / (N + 2,000) calls, µs a call (`goose build`, outside the repository):
+
+| Format | 100 bytes | 1,000 bytes | 10,000 bytes |
+|---|---:|---:|---:|
+| gzip | 7.7 | 11.0 | 41.0 |
+| zstd | 1.4 | 3.2 | 23.8 |
+
+A zstd `reset` clears only the hash table, 131,072 bytes.
+
 ## AMD Ryzen 7 5800X3D, Windows
 
 - Desktop on an MSI `MS-7A34` board, AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,

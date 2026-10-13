@@ -1,6 +1,6 @@
 // Compresses a file with the package, as bench/ref.c does with libdeflate and
 // zlib-ng: one-shot, the whole file in memory, RUNS times, to gzip unless
-// FORMAT says zlib or raw.
+// FORMAT says zlib, raw, or zstd. LEVEL is zstd's, 1 to 22, for zstd.
 //
 //   bench LEVEL FILE RUNS [FORMAT]
 //
@@ -12,7 +12,7 @@ import compress from "../";
 fn main() {
     let a = args();
     guard a.len == 4 || a.len == 5 else {
-        write_stderr("usage: bench LEVEL FILE RUNS [gzip|zlib|raw]\n");
+        write_stderr("usage: bench LEVEL FILE RUNS [gzip|zlib|raw|zstd]\n");
         exit(2);
     }
     let level, lok = parse_int(a[1]);
@@ -22,7 +22,10 @@ fn main() {
     if name == "gzip" { wrap = compress::GZIP; }
     else if name == "zlib" { wrap = compress::ZLIB; }
     else if name == "raw" { wrap = compress::RAW; }
-    guard lok && rok && level >= 0 && level <= 9 && runs > 0 && wrap >= 0 else {
+    else if name == "zstd" { wrap = compress::ZSTD; }
+    let top = if wrap == compress::ZSTD { 22 } else { 9 };
+    let bottom = if wrap == compress::ZSTD { 1 } else { 0 };
+    guard lok && rok && level >= bottom && level <= top && runs > 0 && wrap >= 0 else {
         write_stderr("bad arguments\n");
         exit(2);
     }

@@ -76,35 +76,42 @@ program that imports both builds with one compiler.
    up take a literal for a longer match one byte on), flushes, matches at distance
    32,768, and that a stream's bytes don't depend on how its input was split across
    writes, at levels 0, 1, 2, 6, and 9. Each exact-byte stream at level 1 and up was
-   checked by decompressing it with Python's `zlib`.
+   checked by decompressing it with Python's `zlib`. For zstd, it checks XXH64 against
+   known values, and the exact bytes of empty, raw, RLE, and two compressed blocks, the
+   second across a flush with a repeat offset, each checked with `zstd -d` and
+   `compression.zstd`.
 3. `goose build` of `test/encode.goose` into `build/encode`, a command that compresses
    a file at a level, one-shot or by a plan of writes and flushes.
 4. `scripts/roundtrip.py`: `build/encode` on each input in gzip, zlib, and raw DEFLATE,
-   at levels 0, 1, 2, 6, and 9, one-shot and streamed. Each output must decompress to its
-   input through Python's `zlib`, and gzip output through `gzip -dc` too. At each
-   flush, the output so far must end in `00 00 ff ff` and decompress to exactly the
-   input written so far. The inputs are empty, one byte, text, JSON, random bytes,
-   random inputs of 65,534 to 131,071 bytes around the stored blocks' 65,535-byte
-   limit, long runs and repeated blocks, bytes that repeat at distances 32,767, 32,768,
-   and 32,769, random bytes with runs copied from up to 40 KB back, and 16,000 bytes
-   whose optimal Huffman code needs 17 bits. The plans write in 257-byte pieces, which
-   end inside matches, and flush every 1,000 and every 32,769 bytes, so matches run
-   across writes and flushes. One-shot at level 1 and up, inputs that repeat must
-   compress below a limit set for each, a few percent above what level 1 reaches; text,
-   JSON, and the copies within 40 KB have a tighter limit from level 6, a few percent
-   above what level 6 reaches. The script then reads back the header of the 17-bit input's block: its
-   literal/length code must reach exactly 15 bits and be complete. A fuzz run of 200
-   random inputs, levels, and plans follows, with seed 0; `--levels`, `--fuzz N`, and
-   `--seed S` change them.
+   at levels 0, 1, 2, 6, and 9, and in zstd at levels 1 and 3, one-shot and streamed.
+   Each output must decompress to its input through Python's `zlib`, and gzip output
+   through `gzip -dc` too; zstd output through `compression.zstd`, and one-shot through
+   `zstd -dc` too. At each flush, the output so far must decompress to exactly the
+   input written so far, and DEFLATE's must end in `00 00 ff ff`. The inputs are
+   empty, one byte, text, JSON, random bytes, random inputs of 65,534 to 131,073 bytes
+   around the stored blocks' 65,535-byte limit and zstd's 131,072-byte block, long
+   runs and repeated blocks, bytes that repeat at distances 32,767, 32,768, and 32,769,
+   random bytes with runs copied from up to 40 KB back, 16,000 bytes whose optimal
+   Huffman code needs 17 bits, bytes that repeat at 131,071 and 131,072, at the edge of
+   zstd's window and past it, and 5-byte words with a random byte between, which fill
+   a zstd block's 16,384 sequences. The plans write in 257-byte pieces, which end
+   inside matches, and flush every 1,000 and every 32,769 bytes, so matches run across
+   writes and flushes. One-shot at level 1 and up, inputs that repeat must compress
+   below a limit set for each, a few percent above what level 1 reaches, in DEFLATE
+   and in zstd; text, JSON, and the copies within 40 KB have a tighter DEFLATE limit
+   from level 6, a few percent above what level 6 reaches. The script then reads back
+   the header of the 17-bit input's block: its literal/length code must reach exactly
+   15 bits and be complete. A fuzz run of 200 random inputs, levels, and plans follows,
+   with seed 0; `--levels`, `--zstd-levels`, `--fuzz N`, and `--seed S` change them.
 
 ```sh
 GOOSE=../goose/build-macos/goose scripts/test.sh
 ```
 
-It took about 22 s on the M1 Pro and 51 s on the Ryzen under Git Bash, where starting
-a process costs more (2026-10-12). A program run through TinyCC compiles at
-`-O1` without a C compiler, so the unit tests start fast; `encode` is built with
-`goose build` because `roundtrip.py` runs it 2,499 times.
+It took about 32 s on the M1 Pro (2026-10-13) and 51 s on the Ryzen under Git Bash,
+where starting a process costs more (2026-10-12, before zstd's tests). A program run
+through TinyCC compiles at `-O1` without a C compiler, so the unit tests start fast;
+`encode` is built with `goose build` because `roundtrip.py` runs it 3,570 times.
 
 To try one stream by hand:
 

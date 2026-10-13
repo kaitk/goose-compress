@@ -8,7 +8,7 @@ decompress to its input. gzip output also goes through `gzip -dc`, and one-shot
 zstd output through `zstd -dc`. At each
 flush, the output so far must decompress to exactly the input written so far.
 Inputs that repeat must come out smaller than a limit, one-shot at level 1 and
-up. An input whose optimal Huffman code needs more than 15 bits must get a
+up, and in zstd. An input whose optimal Huffman code needs more than 15 bits must get a
 dynamic code of exactly 15. Then a fuzz run of random inputs, levels, and
 plans, seeded for repeatability.
 
@@ -32,6 +32,8 @@ WBITS = {"gzip": 31, "zlib": 15, "raw": -15}
 STORED_MAX = 65535
 WSIZE = 32768
 ZSTD_BLOCK_MAX = 1 << 17
+# The window zstd.goose declares: its matches reach back fewer bytes than this.
+ZSTD_WINDOW = 1 << 17
 # The first level held to the tighter size limits: the default level.
 STRONG_LEVEL = 6
 
@@ -111,36 +113,55 @@ def deep_code(r, n=16_000, rare=12, bulk=32):
     return bytes(out)
 
 
+def short_matches(r, n):
+    """Five-byte words from a set of 16, each followed by a random byte: a
+    sequence every 6 bytes or so, more than a zstd block holds."""
+    words = [r.randbytes(5) for _ in range(16)]
+    out = bytearray()
+    while len(out) < n:
+        out += r.choice(words)
+        out.append(r.randrange(256))
+    return bytes(out[:n])
+
+
 def inputs():
     """Yields each input's name, bytes, and the most its one-shot output may
-    take at level 1 and up, as a share of the input: a few percent over what
-    level 1 reaches. Where the stronger levels do better, a pair: the limit
-    from level 1, then the one from STRONG_LEVEL, a few percent over what
-    level 6 reaches."""
+    take at level 1 and up, as a share of the input, in DEFLATE and in zstd:
+    a few percent over what level 1 reaches. Where DEFLATE's stronger levels
+    do better, its limit is a pair: the one from level 1, then the one from
+    STRONG_LEVEL, a few percent over what level 6 reaches. zstd's literals
+    are raw, so its limits are looser where literals are many."""
     r = random.Random(3)
-    yield "empty", b"", None
-    yield "one byte", b"a", None
-    yield "text", text(100_000), (0.24, 0.19)
-    yield "json", json_doc(), (0.235, 0.205)
+    yield "empty", b"", None, None
+    yield "one byte", b"a", None, None
+    yield "text", text(100_000), (0.24, 0.19), 0.34
+    yield "json", json_doc(), (0.235, 0.205), 0.345
     # Stored where a code would grow it.
-    yield "random", r.randbytes(300_000), 1.001
+    yield "random", r.randbytes(300_000), 1.001, 1.001
     for n in (STORED_MAX - 1, STORED_MAX, STORED_MAX + 1, 2 * STORED_MAX,
               2 * STORED_MAX + 1):
-        yield f"{n} bytes", r.randbytes(n), 1.001
+        yield f"{n} bytes", r.randbytes(n), 1.001, 1.001
     # Around zstd's largest block.
     for n in (ZSTD_BLOCK_MAX, ZSTD_BLOCK_MAX + 1):
-        yield f"{n} bytes", r.randbytes(n), 1.001
-    # Under 3 bits for each match of 258.
-    yield "a run of one byte", b"a" * 300_000, 0.0013
+        yield f"{n} bytes", r.randbytes(n), 1.001, 1.001
+    # Under 3 bits for each match of 258; RLE blocks in zstd.
+    yield "a run of one byte", b"a" * 300_000, 0.0013, 0.00005
     # The block, then a match of 258 at distance 1000 every 258 bytes.
-    yield "a 1000-byte block, repeated", r.randbytes(1000) * 300, 0.0095
+    yield "a 1000-byte block, repeated", r.randbytes(1000) * 300, 0.0095, 0.0037
     # The first 32 KB stored, then matches.
-    yield "repeats at 32767", repeats_at(r, WSIZE - 1, 4 * WSIZE), 0.27
-    yield "repeats at 32768", repeats_at(r, WSIZE, 4 * WSIZE), 0.27
-    # Out of reach: nothing to match, so stored.
-    yield "repeats at 32769", repeats_at(r, WSIZE + 1, 4 * WSIZE), 1.001
-    yield "copies within 40 KB", copies(r, 200_000), (0.39, 0.375)
-    yield "a code past 15 bits", deep_code(r), 0.66
+    yield "repeats at 32767", repeats_at(r, WSIZE - 1, 4 * WSIZE), 0.27, 0.26
+    yield "repeats at 32768", repeats_at(r, WSIZE, 4 * WSIZE), 0.27, 0.26
+    # Out of DEFLATE's reach: nothing to match, so stored.
+    yield "repeats at 32769", repeats_at(r, WSIZE + 1, 4 * WSIZE), 1.001, 0.26
+    yield "copies within 40 KB", copies(r, 200_000), (0.39, 0.375), 0.43
+    yield "a code past 15 bits", deep_code(r), 0.66, 1.001
+    # At the edge of zstd's window, and out of its reach.
+    r = random.Random(5)
+    yield ("repeats at 131071", repeats_at(r, ZSTD_WINDOW - 1, 3 * ZSTD_WINDOW),
+           1.001, 0.345)
+    yield ("repeats at 131072", repeats_at(r, ZSTD_WINDOW, 3 * ZSTD_WINDOW),
+           1.001, 1.001)
+    yield "short matches", short_matches(r, 300_000), 0.39, 0.64
 
 
 def plans(n):
@@ -184,7 +205,7 @@ def level_limit(limit, level):
 
 def check(encode, fmt, level, data, plan, tmp, limit=None):
     if fmt == "zstd":
-        check_zstd(encode, level, data, plan, tmp)
+        check_zstd(encode, level, data, plan, tmp, limit)
         return
     out, path, flushes = run(encode, fmt, level, data, plan, tmp)
     got = zlib.decompress(out, WBITS[fmt])
@@ -207,7 +228,7 @@ def check(encode, fmt, level, data, plan, tmp, limit=None):
         raise Failure(f"{len(out)} bytes out, over {limit} of the {len(data)} in")
 
 
-def check_zstd(encode, level, data, plan, tmp):
+def check_zstd(encode, level, data, plan, tmp, limit=None):
     out, path, flushes = run(encode, "zstd", level, data, plan, tmp)
     # Decompressing checks the content checksum too.
     try:
@@ -229,6 +250,8 @@ def check_zstd(encode, level, data, plan, tmp):
     blocks = len(data) // ZSTD_BLOCK_MAX + len(flushes) + 1
     if len(out) > len(data) + 10 + 3 * blocks:
         raise Failure(f"{len(out)} bytes out for {len(data)} in")
+    if limit is not None and len(out) > limit * len(data) + 18:
+        raise Failure(f"{len(out)} bytes out, over {limit} of the {len(data)} in")
 
 
 CL_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
@@ -339,12 +362,13 @@ def main():
     runs += [("zstd", level) for level in zlevels]
     cases = 0
     with tempfile.TemporaryDirectory() as tmp:
-        for name, data, limit in inputs():
+        for name, data, limit, zlimit in inputs():
             for fmt, level in runs:
+                lim = zlimit if fmt == "zstd" else level_limit(limit, level)
                 for pname, plan in [("one-shot", None)] + list(plans(len(data))):
                     try:
                         check(args.encode, fmt, level, data, plan, tmp,
-                              level_limit(limit, level) if plan is None else None)
+                              lim if plan is None else None)
                     except Failure as e:
                         sys.exit(f"FAIL {name}, {fmt}, level {level}, {pname}: {e}")
                     cases += 1
@@ -358,7 +382,8 @@ def main():
         r = random.Random(args.seed)
         for i in range(args.fuzz):
             n = r.choice((0, 1, r.randrange(1000), r.randrange(300_000)))
-            data = r.choice((r.randbytes, text, lambda n: copies(r, n)))(n)
+            data = r.choice((r.randbytes, text, lambda n: copies(r, n),
+                             lambda n: short_matches(r, n)))(n)
             fmt, level = r.choice(runs)
             plan = fuzz_plan(r, n)
             try:

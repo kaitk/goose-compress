@@ -2,8 +2,9 @@
 // Huffman code builder, the exact bytes of small streams at level 0, of small
 // fixed and dynamic Huffman streams at level 1, and of what the levels match
 // differently, and that a stream's bytes don't depend on how its input was
-// split across writes. scripts/test-unit.sh runs them through TinyCC;
-// scripts/roundtrip.py checks the output against gzip and Python's zlib.
+// split across writes; for zstd, XXH64 and the exact bytes of small frames.
+// scripts/test-unit.sh runs them through TinyCC; scripts/roundtrip.py checks
+// the output against gzip, zstd, and Python's zlib and compression.zstd.
 import std;
 import compress from "../";
 
@@ -390,6 +391,30 @@ fn test_zstd() {
     // A last raw block of 2 bytes.
     assert(same(zstd("ab"), [0x28, 0xB5, 0x2F, 0xFD, 0x04, 0x38, 0x11, 0, 0, 0x61, 0x62,
                              0x61, 0x4A, 0xD0, 0x92]));
+
+    // A last compressed block of 14 bytes: 8 raw literals, then 1 sequence
+    // with the predefined tables. The sequence is the 8 literals and a match
+    // of 24 at distance 8, the third of the starting repeat offsets 1, 4, and
+    // 8, so its offset value is 3: code 1, with 1 extra bit. Its bitstream
+    // is that bit, the match length's, offset's, and literal length's states
+    // (32, 23, and 28, which decode to codes 21, 1, and 8), and a 1 bit.
+    let abc = "abcdefghabcdefghabcdefghabcdefgh";
+    assert(same(zstd(abc), [0x28, 0xB5, 0x2F, 0xFD, 0x04, 0x38, 0x75, 0, 0, 0x40,
+                            0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x01, 0x00,
+                            0xC1, 0xCB, 0x05, 0xCE, 0x1A, 0x76, 0x51]));
+    // The same block not last, then after a flush a last one of 7 bytes: a
+    // literal, then a match of 31 at distance 8, now the first repeat offset,
+    // so offset value 1, with no extra bits.
+    var f = compress::zstd_encoder(1);
+    var fout: u8[>..] = [];
+    compress::write(f, abc, fout);
+    compress::flush(f, fout);
+    compress::write(f, abc, fout);
+    compress::finish(f, fout);
+    assert(same(fout, [0x28, 0xB5, 0x2F, 0xFD, 0x04, 0x38, 0x74, 0, 0, 0x40, 0x61,
+                       0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x01, 0x00, 0xC1, 0xCB,
+                       0x05, 0x3D, 0, 0, 0x08, 0x61, 0x01, 0x00, 0x0D, 0xB8, 0x02,
+                       0x7B, 0x53, 0x07, 0x18]));
 
     // Across blocks, the bytes don't depend on how the input was split, and a
     // flush with nothing held writes nothing.

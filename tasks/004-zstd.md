@@ -38,7 +38,7 @@ after those are measured. This task follows that order.
 ## Proposed decisions
 
 Recorded in `docs/architecture/README.md`. Step 1 settled all but the window and the
-levels, which stay proposed:
+levels; step 2 kept the 128 KB window, and the levels stay proposed:
 
 - **`compress::ZSTD` is a fourth format for `compress`**, so goose-http picks an
   encoding with one argument. The stream is a `ZstdEncoder` of its own, with
@@ -81,7 +81,7 @@ levels, which stay proposed:
 - [x] Step 1: `compress::ZSTD` and `ZstdEncoder`, round trips through `zstd -d` and
       Python's `compression.zstd` on the inputs `scripts/roundtrip.py` covers, flushes
       included, and XXH64 checked against known values
-- [ ] Step 2: level 1 matches into compressed blocks, passing the same tests
+- [x] Step 2: level 1 matches into compressed blocks, passing the same tests
 - [ ] Step 3: Huffman literals, passing the same tests
 - [ ] Step 4: FSE tables per block, passing the same tests, with a fuzz run
 - [ ] Step 5: level 3, passing the same tests
@@ -100,3 +100,18 @@ Python port of the specification on 100 bytes. `scripts/roundtrip.py` checks zst
 levels 1 and 3 on every input and plan, through `compression.zstd` and `zstd -dc`, in
 the fuzz run too. The decisions it settles are in the architecture doc. There's no
 speed to measure yet: the encoder copies its input and hashes it.
+
+## Step 2
+
+Done (2026-10-13). Level 1 is libzstd's `ZSTD_fast`, with a 2^15-entry table of
+6-byte hashes, matching each 128 KB block once it's whole. Each block is compressed,
+with raw literals and the predefined FSE tables, or written raw or RLE where that's no
+larger. The window stays 128 KB: 256 KB and 512 KB made Silesia's output 1.4 and 2.0
+percent smaller for 24 and 71 percent more memory. On the M1 Pro, the 12 Silesia files
+come to 0.4246 of their size, against 0.4127 from `zstd -1 --no-compress-literals`
+and 0.3457 from `zstd -1`. Rates are 169 to 560 MB/s on six of seven files, and 2.3
+GB/s on `x-ray`, against step 1's 8.7 GB/s copy
+([results](../docs/results-history.md#zstd-level-1-task-004-step-2)).
+`scripts/roundtrip.py` holds each input to a zstd size limit, with inputs at the
+window's edge and one that fills a block's 16,384 sequences. The unit tests check the
+exact bytes of two compressed blocks, the second using a repeat offset.

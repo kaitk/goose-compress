@@ -176,13 +176,44 @@ until the task named beside it confirms or replaces it.
 - **A zstd stream holds a full block until more input comes**, so the last block
   carries the last-block flag and `finish` adds no empty block after it (task 004
   step 1, 2026-10-12).
+- **A zstd window of 128 KB**, declared in the frame header, in place of libzstd's
+  512 KB at level 1. A 256 KB window made Silesia's output 1.4 percent smaller and a
+  512 KB one 2.0 percent, for a `ZstdEncoder` of 688,304 or 950,448 bytes against
+  557,232, and only on inputs past 128 KB; libzstd itself takes a 128 KB window for
+  inputs up to 128 KB. Most HTTP responses are smaller than that, and the encoder is
+  held per connection slot (task 004 step 2, 2026-10-13,
+  [results](../results-history.md#the-window-and-the-matchers-parameters)).
+- **A zstd block is matched once it's whole**, as libzstd's streaming API does: 128 KB
+  of input past the last block, or the input held at a flush or finish. A match ends at
+  the block's end, so blocks and matches don't depend on how writes split the input,
+  with no lookahead. The window buffer holds the window, a block, and 32 KB, 294,912
+  bytes; when it fills it slides down, keeping exactly the window before the next
+  block, and the 32 KB keeps flushes from making it slide every few bytes (task 004
+  step 2, 2026-10-13).
+- **A zstd block ends at 16,384 sequences**, which takes 131,072 bytes of `u64`
+  entries; 32,768 would never end a block early, at 4 bytes a match. An early end
+  costs another block's headers, a few bytes while the tables are predefined. No block
+  of the 12 Silesia files reaches it at level 1, the most being `mozilla`'s 15,263;
+  `roundtrip.py`'s input of a sequence every 6 bytes reaches it in its second block
+  (task 004 step 2, 2026-10-13).
+- **zstd's level 1 is libzstd's `ZSTD_fast`**: a hash table of 2^15 stream offsets,
+  hashed from 6 bytes as klauspost's `enc_fast.go` does, probed at two positions a
+  step, with the last offset checked two positions on first and a match extended back.
+  After a match, the offset before last is tried at once. The step grows by one
+  position every 128 bytes without a match. libzstd's 7-byte hash made Silesia's
+  output 2.6 percent larger; a 5-byte one gained 1.7 percent, nearly all on `x-ray`,
+  and was 2 to 9 percent slower (task 004 step 2, 2026-10-13).
+- **Repeat offsets are resolved when a block is coded**, from the offsets a decoder
+  holds after the last compressed block. The matcher keeps distances and its own last
+  two offsets; a block written raw leaves the decoder's offsets as they were, as RFC
+  8878 §3.1.1.5 says (task 004 step 2, 2026-10-13).
+- **A zstd block is compressed only when that's smaller**, else written raw, or RLE
+  when it's one repeated byte. The sequences' bitstream is counted exactly before it's
+  written, because the block header holds its size: a bound computed in the forward
+  pass, to skip the count, was 2 to 3 percent slower (task 004 step 2, 2026-10-13).
 
 ## Proposed
 
-- **A zstd window of 128 KB**, declared in the frame header, in place of libzstd's
-  512 KB at level 1: the `ZstdEncoder` is a fixed-size value, one per connection
-  slot. Step 1 holds only a block, 128 KB, the largest zstd allows. Step 2 measures
-  ratio against memory from 128 KB to 512 KB (task 004, 2026-10-12).
 - **zstd's levels, 1 to 22, each running the nearest level built.** Level 1 is the
   fast matcher and 3, the default, the double-fast, as libzstd's; others wait on a
   measurement (task 004, 2026-10-12).
