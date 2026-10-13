@@ -35,6 +35,8 @@ The optimal code lengths come from Moffat and Katajainen's in-place algorithm
   (`hc_matchfinder`). A candidate's 4 hashed bytes, and once a match is found the 4
   bytes ending at the best length, are compared before it's extended. The search is
   inlined at each call, as its `forceinline` does.
+- Level 1's 2-entry hash buckets, both tried unless the newer gives 32 bytes
+  (`ht_matchfinder`).
 - Lazy and lazy2 matching, with its measure of a better match.
 - Each level's search depth, nice length, and lazy mode.
 - Loading the next position's hash bucket early, as its prefetch does, and carrying

@@ -75,7 +75,8 @@ program that imports both builds with one compiler.
    Huffman code builder (RFC 1951's canonical-code example, optimal lengths, and
    Fibonacci frequencies cut to 15 and 7 bits), the exact bytes of small streams at
    level 0 and of small fixed and dynamic Huffman streams at level 1, what the levels
-   match differently (level 2 follows a hash chain past the newest entry; levels 5 and
+   match differently (level 1 tries a bucket's 2 newest entries and level 2 follows the
+   chain past them; levels 5 and
    up take a literal for a longer match one byte on), flushes, matches at distance
    32,768, and that a stream's bytes don't depend on how its input was split across
    writes, at levels 0, 1, 2, 6, and 9. Each exact-byte stream at level 1 and up was

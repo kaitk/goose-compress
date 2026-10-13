@@ -126,8 +126,13 @@ until the task named beside it confirms or replaces it.
   symbols, as zlib's does, because zlib's inflate rejects an incomplete code other than
   a lone 1-bit one (task 001 step 3, 2026-10-12).
 - **Levels follow libdeflate's.** 0 stores; the default is 6, as zlib's and
-  libdeflate's. Level 1 probes one hash candidate a position and takes the match
-  greedily, keeping no chains. Levels 2 to 9 search the hash chains with libdeflate's
+  libdeflate's. Level 1 is libdeflate's `ht_matchfinder`: 2^15 buckets of the 2
+  latest offsets, in the 2^16-entry hash table, both tried unless the newer gives 32
+  bytes, and the longer match taken greedily, with no chains. Against one probe a
+  position it made level 1's output 0.1 to 20 percent smaller, to within 0.2 percent
+  of libdeflate's, and 11 to 28 percent slower on the Ryzen; the same code in
+  hand-fixed C lost 2 to 4 percent on four files of seven, so the loss is taken as
+  codegen to fix (task 005, 2026-10-13). Levels 2 to 9 search the hash chains with libdeflate's
   depth (the most candidates compared) and nice length (the length that ends a
   search). Levels 5 to 7 match lazily: after a match, a search one position on
   (at half the depth) may find a better one, and the encoder emits a literal and
@@ -143,7 +148,7 @@ until the task named beside it confirms or replaces it.
 
   | Level | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
   |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-  | Search | one probe | greedy | greedy | greedy | lazy | lazy | lazy | lazy2 | lazy2 |
+  | Search | 2-entry bucket | greedy | greedy | greedy | lazy | lazy | lazy | lazy2 | lazy2 |
   | Depth | 1 | 6 | 12 | 16 | 16 | 35 | 100 | 300 | 600 |
   | Nice length | 258 | 10 | 14 | 30 | 30 | 65 | 130 | 258 | 258 |
 - **A match found ahead is held across writes.** When a lazy level takes the match

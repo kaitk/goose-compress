@@ -6,7 +6,7 @@ flushes. Pure
 Goose, with no C ([architecture](docs/architecture/README.md)). Its first user is
 [goose-http](https://github.com/kaitk/goose-http), which compresses responses with it.
 
-For DEFLATE, level 1 finds LZ77 matches with one hash probe a position; levels 2 to 9
+For DEFLATE, level 1 finds LZ77 matches in 2-entry hash buckets; levels 2 to 9
 search hash chains, and from level 5 match lazily, after libdeflate's design. Each block
 is coded with a dynamic Huffman code built from it, the fixed code, or stored, whichever
 is shortest. For zstd, levels 1 and 3 follow libzstd's fast and double-fast matchers,
@@ -30,7 +30,7 @@ and each block's literals and sequences are coded with tables chosen for it.
 | 🟢 | One-shot `compress` |
 | 🟢 | Streaming `write`, `flush` (as zlib's `Z_SYNC_FLUSH`), and `finish` |
 | 🟢 | CRC-32, Adler-32, and XXH64, continuing across calls |
-| 🟢 | DEFLATE levels: 0 stores, 1 probes once, 2 to 4 search chains greedily, 5 to 9 lazily |
+| 🟢 | DEFLATE levels: 0 stores, 1 tries 2 candidates, 2 to 4 search chains greedily, 5 to 9 lazily |
 | 🟢 | zstd levels: 1 runs the fast matcher, 2 to 22 the double-fast one |
 
 ## Quick start

@@ -1,6 +1,7 @@
-// The DEFLATE stream at levels 1 and up: LZ77 with one hash probe a position at
-// level 1 and hash chains above it, and each block coded with a dynamic Huffman code built from its symbols, with
-// the fixed code (RFC 1951 §3.2.6), or stored, whichever is shortest.
+// The DEFLATE stream at levels 1 and up: LZ77 with 2-entry hash buckets at level
+// 1 and hash chains above it, and each block coded with a dynamic Huffman code
+// built from its symbols, with the fixed code (RFC 1951 §3.2.6), or stored,
+// whichever is shortest.
 namespace compress;
 
 import std;
@@ -32,7 +33,7 @@ let END_BLOCK = 256;
 // How each level from 1 matches, after libdeflate's levels: how many
 // candidates a search compares at most, the length that ends a search, and how
 // many positions after a match it looks for a better one (0 greedy, 1 lazy, 2
-// lazy2). Level 1 probes one candidate and keeps no chains.
+// lazy2). Level 1 keeps no chains (match_fast).
 let DEPTH = [0, 1, 6, 12, 16, 16, 35, 100, 300, 600];
 let NICE = [0, MAX_MATCH, 10, 14, 30, 30, 65, 130, MAX_MATCH, MAX_MATCH];
 let LAZY = [0, 0, 0, 0, 0, 1, 1, 1, 2, 2];
@@ -50,9 +51,9 @@ struct Lz {
     fill: i64,
     pos: i64,
     block_start: i64,
-    // Each hash bucket's latest stream offset. An entry only suggests where a
-    // match may start: it may be stale, or from 2^32 bytes back, so every
-    // candidate is compared byte by byte.
+    // Each hash bucket's latest stream offset, or at level 1 the 2 latest. An
+    // entry only suggests where a match may start: it may be stale, or from
+    // 2^32 bytes back, so every candidate is compared byte by byte.
     head: u32[HASH_SIZE],
     // From level 2, the hash chains: for each stream offset modulo WSIZE, the
     // low 16 bits of the one before it in its bucket, or of the offset WSIZE
@@ -145,7 +146,9 @@ fn lz_match(z: Lz&, out: u8[>..]&, flushing: bool) {
     }
 }
 
-// Level 1: one probe a position, the longest match taken whole.
+// Level 1, after libdeflate's `ht_matchfinder`: head holds 2^15 buckets of the
+// 2 latest offsets, newest first. The newer candidate is extended whole; the
+// older is tried too unless that gave FAST_NICE, and the longer match is taken.
 fn match_fast(z: Lz&, out: u8[>..]&, end: i64) {
     while z.pos < end {
         let p = z.pos;
@@ -153,26 +156,53 @@ fn match_fast(z: Lz&, out: u8[>..]&, end: i64) {
         var dist = 0;
         if p + 4 <= z.fill {
             let v = load32(z.win, p);
-            let h = hash4(v);
-            let cand = z.head[h];
+            let b = bucket(v);
             let here = z.base + p as! u32;
-            z.head[h] = here;
-            let d: i64 = here - cand;
-            // The 4 bytes hashed, compared at once, turn away most candidates.
-            if d >= 1 && d <= WSIZE && d <= p && load32(z.win, p - d) == v {
-                len = 4 + match_len(z.win, p - d + 4, p + 4, min(MAX_MATCH, z.fill - p) - 4);
-                dist = d;
+            let c0 = z.head[b];
+            let c1 = z.head[b + 1];
+            z.head[b] = here;
+            z.head[b + 1] = c0;
+            let most = min(MAX_MATCH, z.fill - p);
+            let reach = min(WSIZE, p) as! u64;
+            let d0: i64 = here - c0;
+            // The older candidate is out of reach whenever the newer one is.
+            if (d0 - 1) as! u64 < reach {
+                // The 4 bytes hashed, compared at once, turn away most candidates.
+                if load32(z.win, p - d0) == v {
+                    len = 4 + match_len(z.win, p - d0 + 4, p + 4, most - 4);
+                    dist = d0;
+                }
+                let d1: i64 = here - c1;
+                if len < FAST_NICE && (d1 - 1) as! u64 < reach && load32(z.win, p - d1) == v &&
+                   (len == 0 || load32(z.win, p - d1 + len - 3) == load32(z.win, p + len - 3)) {
+                    let len1 = 4 + match_len(z.win, p - d1 + 4, p + 4, most - 4);
+                    if len1 > len {
+                        len = len1;
+                        dist = d1;
+                    }
+                }
             }
         }
         if len >= MIN_MATCH {
             add_match(z, out, dist, len);
             for i in p + 1..min(p + len, z.fill - 3) {
-                z.head[hash4(load32(z.win, i))] = z.base + i as! u32;
+                let bi = bucket(load32(z.win, i));
+                z.head[bi + 1] = z.head[bi];
+                z.head[bi] = z.base + i as! u32;
             }
         } else {
             add_lit(z, out, z.win[p]);
         }
     }
+}
+
+// Level 1's match length that leaves a bucket's older candidate untried, as
+// libdeflate's.
+let FAST_NICE = 32;
+
+// The first of the 2 entries of a level 1 bucket in head.
+fn bucket(v: u32) -> i64 {
+    return ((v * 0x9E3779B1) >> (32 - HASH_BITS + 1)) * 2;
 }
 
 // Levels 2 to 9: searches along the hash chains, and at a lazy level takes a
