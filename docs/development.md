@@ -258,7 +258,8 @@ build/bench/bench 6 build/bench/corpus/mozilla 20 & sleep 1; sample bench 4 -fil
   install only. A Git Bash already open needs both added to its `PATH`.
 - Git Bash turns a `clang-cl` flag such as `/O2` into a path (`C:/Program Files/Git/O2`).
   From Git Bash, give `clang-cl` its flags with `-` (`-O2`, `-Fe...`) and Windows paths
-  from `cygpath -w`.
+  from `cygpath -w`. Linker flags have no `-` form (`/link /DEBUG`): set
+  `MSYS_NO_PATHCONV=1` for that command, or, through `clang`, pass `-Wl,-debug`.
 - The zstd 1.5.7 command line compresses with worker threads by default, in `zstd -b`
   too: `zstd -b1` gave `dickens` 681 MB/s, and with `-T1` 421, the rate of libzstd in
   `ref`. Pass `-T1` to compare its rates with one thread's.
