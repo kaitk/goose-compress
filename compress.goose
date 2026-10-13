@@ -6,12 +6,15 @@ namespace compress;
 import std;
 import .checksum;
 import .deflate;
+import .zstd;
 
 // The container around the DEFLATE stream: gzip (RFC 1952), zlib (RFC 1950), or
-// none (RFC 1951 alone, HTTP's "deflate" being zlib's).
+// none (RFC 1951 alone, HTTP's "deflate" being zlib's). ZSTD is zstd (RFC 8878),
+// for compress only; its stream is a ZstdEncoder (zstd.goose).
 let GZIP = 0;
 let ZLIB = 1;
 let RAW = 2;
+let ZSTD = 3;
 
 // Level 0 stores; 1 to 9 compress, each searching longer than the one before.
 let DEFAULT_LEVEL = 6;
@@ -63,9 +66,19 @@ fn reset(e: Encoder&, format: i64 = GZIP, level: i64 = DEFAULT_LEVEL) {
 // around: that ran level 6 2 to 7 percent slower on the Ryzen.
 var ONE_SHOT: Encoder[>..];
 
-// Compresses `data` whole and appends the stream to `out`.
+var ONE_SHOT_ZSTD: ZstdEncoder[>..];
+
+// Compresses `data` whole and appends the stream to `out`. For ZSTD, the level
+// is zstd's, 1 to 22.
 fn compress(data: const u8[:], out: u8[>..]&, format: i64 = GZIP,
             level: i64 = DEFAULT_LEVEL) {
+    if format == ZSTD {
+        if ONE_SHOT_ZSTD.len == 0 { ONE_SHOT_ZSTD.push(zstd_encoder()); }
+        reset(ONE_SHOT_ZSTD[0], level);
+        write(ONE_SHOT_ZSTD[0], data, out);
+        finish(ONE_SHOT_ZSTD[0], out);
+        return;
+    }
     if ONE_SHOT.len == 0 { ONE_SHOT.push(encoder()); }
     reset(ONE_SHOT[0], format, level);
     write(ONE_SHOT[0], data, out);

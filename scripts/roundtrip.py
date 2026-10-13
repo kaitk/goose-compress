@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Checks the encoder's output against gzip and Python's zlib.
+"""Checks the encoder's output against gzip, zstd, and Python's zlib and
+compression.zstd.
 
 Runs build/encode (test/encode.goose) on each input in each format and at each
 level, one-shot and streamed, and fails on the first output that doesn't
-decompress to its input. gzip output also goes through `gzip -dc`. At each
+decompress to its input. gzip output also goes through `gzip -dc`, and one-shot
+zstd output through `zstd -dc`. At each
 flush, the output so far must decompress to exactly the input written so far.
 Inputs that repeat must come out smaller than a limit, one-shot at level 1 and
 up. An input whose optimal Huffman code needs more than 15 bits must get a
 dynamic code of exactly 15. Then a fuzz run of random inputs, levels, and
 plans, seeded for repeatability.
 
-    scripts/roundtrip.py [ENCODE] [--levels 0,1,2,6,9] [--fuzz N] [--seed S]
+    scripts/roundtrip.py [ENCODE] [--levels 0,1,2,6,9] [--zstd-levels 1,3]
+                         [--fuzz N] [--seed S]
 """
 
 import argparse
@@ -22,11 +25,13 @@ import subprocess
 import sys
 import tempfile
 import zlib
+from compression import zstd
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WBITS = {"gzip": 31, "zlib": 15, "raw": -15}
 STORED_MAX = 65535
 WSIZE = 32768
+ZSTD_BLOCK_MAX = 1 << 17
 # The first level held to the tighter size limits: the default level.
 STRONG_LEVEL = 6
 
@@ -122,6 +127,9 @@ def inputs():
     for n in (STORED_MAX - 1, STORED_MAX, STORED_MAX + 1, 2 * STORED_MAX,
               2 * STORED_MAX + 1):
         yield f"{n} bytes", r.randbytes(n), 1.001
+    # Around zstd's largest block.
+    for n in (ZSTD_BLOCK_MAX, ZSTD_BLOCK_MAX + 1):
+        yield f"{n} bytes", r.randbytes(n), 1.001
     # Under 3 bits for each match of 258.
     yield "a run of one byte", b"a" * 300_000, 0.0013
     # The block, then a match of 258 at distance 1000 every 258 bytes.
@@ -175,6 +183,9 @@ def level_limit(limit, level):
 
 
 def check(encode, fmt, level, data, plan, tmp, limit=None):
+    if fmt == "zstd":
+        check_zstd(encode, level, data, plan, tmp)
+        return
     out, path, flushes = run(encode, fmt, level, data, plan, tmp)
     got = zlib.decompress(out, WBITS[fmt])
     if got != data:
@@ -194,6 +205,30 @@ def check(encode, fmt, level, data, plan, tmp, limit=None):
     # The wrapper takes at most 18 bytes.
     if limit is not None and level > 0 and len(out) > limit * len(data) + 18:
         raise Failure(f"{len(out)} bytes out, over {limit} of the {len(data)} in")
+
+
+def check_zstd(encode, level, data, plan, tmp):
+    out, path, flushes = run(encode, "zstd", level, data, plan, tmp)
+    # Decompressing checks the content checksum too.
+    try:
+        got = zstd.decompress(out)
+    except zstd.ZstdError as e:
+        raise Failure(f"compression.zstd: {e}")
+    if got != data:
+        raise Failure(f"compression.zstd gave {len(got)} bytes, not the {len(data)} in")
+    if plan is None:
+        p = subprocess.run(["zstd", "-dcq", path], capture_output=True)
+        if p.returncode != 0 or p.stdout != data:
+            raise Failure(f"zstd -dc: exit {p.returncode}, {len(p.stdout)} bytes")
+    for consumed, produced in flushes:
+        part = zstd.ZstdDecompressor().decompress(out[:produced])
+        if part != data[:consumed]:
+            raise Failure(f"flush at input {consumed}, output {produced}: "
+                          f"{len(part)} bytes come out")
+    # The header and checksum take 10 bytes, and each block's header 3.
+    blocks = len(data) // ZSTD_BLOCK_MAX + len(flushes) + 1
+    if len(out) > len(data) + 10 + 3 * blocks:
+        raise Failure(f"{len(out)} bytes out for {len(data)} in")
 
 
 CL_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
@@ -294,22 +329,25 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("encode", nargs="?", default=os.path.join(ROOT, "build", "encode"))
     ap.add_argument("--levels", default="0,1,2,6,9")
+    ap.add_argument("--zstd-levels", default="1,3")
     ap.add_argument("--fuzz", type=int, default=200)
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
     levels = [int(x) for x in args.levels.split(",")]
+    zlevels = [int(x) for x in args.zstd_levels.split(",")]
+    runs = [(fmt, level) for level in levels for fmt in WBITS]
+    runs += [("zstd", level) for level in zlevels]
     cases = 0
     with tempfile.TemporaryDirectory() as tmp:
         for name, data, limit in inputs():
-            for level in levels:
-                for fmt in WBITS:
-                    for pname, plan in [("one-shot", None)] + list(plans(len(data))):
-                        try:
-                            check(args.encode, fmt, level, data, plan, tmp,
-                                  level_limit(limit, level) if plan is None else None)
-                        except Failure as e:
-                            sys.exit(f"FAIL {name}, {fmt}, level {level}, {pname}: {e}")
-                        cases += 1
+            for fmt, level in runs:
+                for pname, plan in [("one-shot", None)] + list(plans(len(data))):
+                    try:
+                        check(args.encode, fmt, level, data, plan, tmp,
+                              level_limit(limit, level) if plan is None else None)
+                    except Failure as e:
+                        sys.exit(f"FAIL {name}, {fmt}, level {level}, {pname}: {e}")
+                    cases += 1
         for level in levels:
             if level > 0:
                 try:
@@ -321,8 +359,7 @@ def main():
         for i in range(args.fuzz):
             n = r.choice((0, 1, r.randrange(1000), r.randrange(300_000)))
             data = r.choice((r.randbytes, text, lambda n: copies(r, n)))(n)
-            fmt = r.choice(list(WBITS))
-            level = r.choice(levels)
+            fmt, level = r.choice(runs)
             plan = fuzz_plan(r, n)
             try:
                 check(args.encode, fmt, level, data, plan, tmp)

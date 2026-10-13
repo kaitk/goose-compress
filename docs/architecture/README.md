@@ -22,7 +22,8 @@ until the task named beside it confirms or replaces it.
   `Z_SYNC_FLUSH` does, so each chunk of a streamed response or SSE event decompresses
   whole on arrival (2026-10-12).
 - **gzip and zlib first, zstd later, no brotli.** gzip and zlib/deflate share one
-  DEFLATE stream. zstd joins the same package once gzip is measured. Brotli is out:
+  DEFLATE stream. zstd joins the same package once gzip is measured, which it now is
+  (task 004, 2026-10-12). Brotli is out:
   HTTP servers serve it as precompressed files, which goose-http already does
   (2026-10-12). Task 002 says what would bring it back.
 - **The encoder is a fixed-size value.** `Encoder` holds its state inline, with no
@@ -158,8 +159,33 @@ until the task named beside it confirms or replaces it.
   is out of Goose's reach
   ([findings](../goose-findings.md#goose-has-no-carryless-multiply)) (task 001 step 4,
   2026-10-12).
+- **zstd is a fourth format for `compress`, with a stream type of its own.**
+  `compress::ZSTD` lets a caller such as goose-http pick any encoding with one
+  argument. Its stream is a `ZstdEncoder`, with overloads of `reset`, `write`,
+  `flush`, and `finish`: an `Encoder` holding both formats' state would make every
+  gzip slot pay for zstd's window and tables (task 004 step 1, 2026-10-12).
+- **A zstd flush ends the current block and writes nothing else.** zstd blocks end on a
+  byte boundary, so a reader decodes everything up to the last block whole, with no
+  marker like DEFLATE's empty stored block. A flush with no input held writes nothing
+  (task 004 step 1, 2026-10-12).
+- **The zstd frame carries the content checksum and no content size.** The checksum
+  is the low 32 bits of XXH64, as the zstd command line and klauspost's Go encoder
+  write it; libzstd's API leaves it off, so the benchmark turns it on there. With no
+  content size, `compress` and an unflushed stream give the same bytes, as for
+  DEFLATE (task 004 step 1, 2026-10-12).
+- **A zstd stream holds a full block until more input comes**, so the last block
+  carries the last-block flag and `finish` adds no empty block after it (task 004
+  step 1, 2026-10-12).
 
 ## Proposed
+
+- **A zstd window of 128 KB**, declared in the frame header, in place of libzstd's
+  512 KB at level 1: the `ZstdEncoder` is a fixed-size value, one per connection
+  slot. Step 1 holds only a block, 128 KB, the largest zstd allows. Step 2 measures
+  ratio against memory from 128 KB to 512 KB (task 004, 2026-10-12).
+- **zstd's levels, 1 to 22, each running the nearest level built.** Level 1 is the
+  fast matcher and 3, the default, the double-fast, as libzstd's; others wait on a
+  measurement (task 004, 2026-10-12).
 
 - **DEFLATE in steps that each give valid output** (task 001): stored blocks, then LZ77
   with fixed Huffman tables, then dynamic tables, then speed. Each step keeps the API.

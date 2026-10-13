@@ -359,6 +359,64 @@ fn test_fixed_flush() {
     assert(same(out, [0x43, 0xa6, 0x00]));
 }
 
+fn zstd(data: const u8[:], level: i64 = 1) -> u8[>..] {
+    var out: u8[>..] = [];
+    compress::compress(data, out, compress::ZSTD, level);
+    return out;
+}
+
+fn test_zstd() {
+    assert(compress::xxh64("") == 0xEF46DB3751D8E999);
+    assert(compress::xxh64("a") == 0xD24EC4F1A98C6E5B);
+    assert(compress::xxh64("abc") == 0x44BC2CF5AD770999);
+    // Stripes, then 4 bytes, as a Python port of the reference gives it.
+    var bytes: u8[>..] = [];
+    for i in 100 { bytes.push(i as! u8); }
+    assert(compress::xxh64(bytes) == 7692681977284421015);
+    for cut in [1, 31, 32, 33, 50] {
+        var x = compress::Xxh64 { .. };
+        compress::xxh64_update(x, bytes[..cut]);
+        compress::xxh64_update(x, bytes[cut..]);
+        assert(compress::xxh64_digest(x) == 7692681977284421015);
+    }
+
+    // The magic, the descriptor, a 128 KB window, an empty last raw block,
+    // and XXH64("")'s low 32 bits.
+    assert(same(zstd(""), [0x28, 0xB5, 0x2F, 0xFD, 0x04, 0x38, 1, 0, 0,
+                           0x99, 0xE9, 0xD8, 0x51]));
+    // A last RLE block of 4 bytes.
+    assert(same(zstd("aaaa"), [0x28, 0xB5, 0x2F, 0xFD, 0x04, 0x38, 0x23, 0, 0, 0x61,
+                               0x32, 0xBF, 0x84, 0xBF]));
+    // A last raw block of 2 bytes.
+    assert(same(zstd("ab"), [0x28, 0xB5, 0x2F, 0xFD, 0x04, 0x38, 0x11, 0, 0, 0x61, 0x62,
+                             0x61, 0x4A, 0xD0, 0x92]));
+
+    // Across blocks, the bytes don't depend on how the input was split, and a
+    // flush with nothing held writes nothing.
+    var big: u8[>..] = [];
+    for i in 300000 { big.push((i * 7 / 3) as! u8); }
+    let whole = zstd(big, 3);
+    for step in [1000, 131072, 131073] {
+        var e = compress::zstd_encoder(3);
+        var out: u8[>..] = [];
+        var at = 0;
+        while at < big.len {
+            let end = min(at + step, big.len);
+            compress::write(e, big[at..end], out);
+            at = end;
+        }
+        compress::finish(e, out);
+        assert(out == whole);
+        compress::reset(e, 3);
+        out.clear();
+        compress::write(e, "ab", out);
+        compress::flush(e, out);
+        let n = out.len;
+        compress::flush(e, out);
+        assert(out.len == n && n == 6 + 3 + 2);
+    }
+}
+
 fn main() {
     test_checksums();
     test_empty();
@@ -374,5 +432,6 @@ fn main() {
     test_reset();
     test_flush();
     test_fixed_flush();
+    test_zstd();
     print("test_compress: ok");
 }
