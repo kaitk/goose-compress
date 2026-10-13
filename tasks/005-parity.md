@@ -31,12 +31,14 @@ stored), leave libzstd 1.45 to 1.74 times faster at level 1 and 1.22 to 1.37 at 
 3, with klauspost about even
 ([results](../docs/results.md#zstd-levels-1-and-3-at-b396581)). `be26d4e` and
 `64f7bc5` took 0 to 3 percent more out of `code_seqs`. The pin moved to `0bdbd18`,
-whose std `ctz` and `clz` are instructions. Left for zstd:
+whose std `ctz` and `clz` are instructions. `d10dd61` gives zstd its own `match_len`
+with one 8-byte load and `ctz`, +2.4 to +9.2 percent; either in the shared one cost
+gzip up to 6 percent on `x-ray`
+([history](../docs/results-history.md#task-005-zstds-own-match_len-at-d10dd61)). Left
+for zstd:
 
-- `load64` as one 8-byte slice: +2.6 to +6.6 percent for zstd, but -6 percent for gzip
-  on `x-ray` at levels 6 and 9, through the `match_len` both share
-  ([history](../docs/results-history.md#task-005-zstds-sequence-codes-at-64f7bc5)).
-  Try std's `ctz` in `match_len` in place of the de Bruijn table first.
+- A full `FORMAT=zstd bench/run.sh` at the latest commit, for `docs/results.md` and the
+  README, which show `b396581`.
 - The FSE steps and `put_seqs`, 14 percent at level 1 on `webster`; the literals'
   Huffman coding on `x-ray`, about 1.8 times libzstd's time a byte.
 - The tables against the 512 KB L2: libzstd's level 1 hash table is 32 KB, the

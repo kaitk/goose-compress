@@ -1390,3 +1390,42 @@ zstd gained 2.6 to 6.6 percent in every cell, but gzip lost 5.9 percent on `x-ra
 level 6 and 6.3 at level 9, in two runs. With `match_len` kept on two `load32`s, gzip
 was within noise and zstd kept a third of the gain, so most of both comes from
 `match_len`'s 8-byte load, which the two formats share.
+
+### Task 005: zstd's own `match_len`, at `d10dd61`
+
+2026-10-14, Goose `0bdbd18`, each build against `64f7bc5` at the same pin. Quick checks
+first, 2 rounds of `bench LEVEL FILE 5` on 3 files each:
+
+| Build | gzip `x-ray` 6 | gzip `x-ray` 9 | gzip `mozilla` 6 | zstd `dickens` 1 | zstd `webster` 3 |
+|---|---:|---:|---:|---:|---:|
+| Shared `match_len` with std's `ctz` | -5.1% | -3.5% | -2.9% | +1.7% | +0.6% |
+| The same, and `load64` as one 8-byte load | -6.3% | -3.4% | +0.0% | +7.2% | +6.9% |
+| `d10dd61`: zstd's own, with both; DEFLATE's as before | +1.1% | -1.0% | -3.8% | +8.5% | +5.8% |
+
+Any change to the inner loop of the shared `match_len` costs DEFLATE's chain search on
+`x-ray` at levels 6 and 9, though most of its matches there end at the first byte,
+before that loop: the cost is in how clang compiles the search around it, not in the
+loop. zstd gains 5 to 7 percent from the two together. So zstd got its own copy.
+`load64` is one 8-byte load for XXH64 and zstd's hashes; DEFLATE's `match_len` builds
+its 8 bytes from two `load32`s, as before.
+
+`d10dd61` in 3 rounds of 5 runs on all seven files:
+
+| File | Level | zstd base MB/s | zstd | Level | gzip base MB/s | gzip |
+|---|---:|---:|---:|---:|---:|---:|
+| dickens | 1 | 202.8 | +9.2% | 1 | 163.2 | -1.2% |
+| webster | 1 | 245.9 | +7.4% | 1 | 181.3 | +1.0% |
+| xml | 1 | 514.2 | +7.4% | 1 | 305.8 | -0.3% |
+| nci | 1 | 699.6 | +2.4% | 1 | 351.5 | +0.4% |
+| mozilla | 1 | 306.0 | +7.2% | 1 | 168.1 | +4.7% |
+| samba | 1 | 376.5 | +6.9% | 1 | 230.0 | +2.0% |
+| x-ray | 1 | 653.1 | +0.9% | 1 | 104.2 | +1.0% |
+| dickens | 3 | 160.2 | +6.3% | 6 | 63.9 | +0.2% |
+| webster | 3 | 194.3 | +5.2% | 6 | 86.0 | +0.8% |
+| xml | 3 | 451.4 | +5.6% | 6 | 158.4 | +1.4% |
+| nci | 3 | 640.0 | +4.8% | 6 | 197.7 | +0.4% |
+| mozilla | 3 | 222.6 | +7.1% | 6 | 99.9 | +0.1% |
+| samba | 3 | 306.9 | +5.2% | 6 | 116.8 | +0.7% |
+| x-ray | 3 | 144.8 | +7.3% | 6 | 88.8 | +1.2% |
+
+gzip at level 9: -1.2 to +2.7 percent.

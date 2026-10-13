@@ -297,3 +297,19 @@ Huffman coding, which none of these changes touch.
 by each compiler, writes the same output, and in 3 alternating rounds of `bench LEVEL
 FILE 5` every cell is within 1.9 percent: gzip levels 1, 6, and 9 -1.2 to +1.2
 percent, zstd levels 1 and 3 -1.4 to +1.9. The results above stand for `0bdbd18`.
+
+### zstd's own `match_len` at `d10dd61`
+
+2026-10-14, Goose `0bdbd18`, measured as at `b396581`, against `64f7bc5`. zstd's
+matchers get a `match_len` of their own with one 8-byte load and std's `ctz`, which
+`0bdbd18` makes an instruction; DEFLATE's keeps two 4-byte loads and the de Bruijn
+table. Same output in both formats.
+
+| Format | Levels | Against `64f7bc5` |
+|---|---|---|
+| zstd | 1 | +2.4% to +9.2%, `x-ray` +0.9% |
+| zstd | 3 | +4.8% to +7.3% |
+| gzip | 1, 6, 9 | -1.2% to +4.7% (no change to its code) |
+
+Per file, and why DEFLATE keeps its own, in
+[results-history.md](results-history.md#task-005-zstds-own-match_len-at-d10dd61).

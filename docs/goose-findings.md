@@ -112,8 +112,11 @@ fields in place (task 003). `compress` does so with an encoder it keeps.
 Found on `5c83a5a`, task 001; `clz` on x86-64 on `c38dc0f`, task 003. Status: fixed in
 `d687028`, checked on `0bdbd18` (2026-10-13): std's three are now runtime functions over
 the C compiler's builtins, and the program below takes 0.12 s on the Ryzen under `goose
-build`. The package's tables and de Bruijn multiply in their place are still to be
-measured against them.
+build`. zstd's `match_len` uses `ctz` since `d10dd61`; DEFLATE's
+keeps the de Bruijn multiply, because `ctz` there made the chain search 3 to 5 percent
+slower on `x-ray` at levels 6 and 9, through how clang compiles the code around it
+([results](results-history.md#task-005-zstds-own-match_len-at-d10dd61)). The length
+and distance code tables are still to be measured against `clz`.
 
 std's `clz`, `ctz`, and `popcount` are Goose loops, one iteration a bit (one a set
 bit for `popcount`). Apple clang 21 turns `clz`'s loop into the `clz` instruction,
