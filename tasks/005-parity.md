@@ -11,21 +11,31 @@ libdeflate's rate, level 6 at 0.73 to 0.84
 `24ac46b` ports level 1's `ht_matchfinder`: output within 0.2 percent of libdeflate's,
 at 0.51 to 0.63 of its rate, 11 to 28 percent slower than before
 ([results](../docs/results-history.md#task-005-level-1-in-libdeflates-2-entry-buckets-at-24ac46b)).
-Next:
+`8ec4538` extends matches 8 bytes at a time, +0.8 to +9.0 percent everywhere: level 9
+runs at 0.85 to 1.12 of libdeflate's rate, at or above it on six files of seven, level
+6 at 0.74 to 0.88, and level 1 at 0.56 to 0.66
+([results](../docs/results-history.md#task-005-8-byte-match-extension-at-8ec4538)).
+The window reads keep their bounds checks, which the compiler can't drop
+([findings](../docs/goose-findings.md#bounds-check-elimination-doesnt-combine-facts-about-a-difference)),
+and strict aliasing gave at most 3 percent. At level 1, finding matches alone runs at
+libdeflate's rate in C; recording and writing the symbols takes about 16 ms of a
+`dickens` run against libdeflate's 9, and the small changes to that path tried came
+within noise ([results](../docs/results-history.md#task-005-the-symbol-path-at-level-1-not-kept)).
 
-- Codegen, for levels 1 and 6: `8ec4538` extends matches 8 bytes at a time (+0.8 to
-  +9.0 percent everywhere); level 9 is at libdeflate's rate on six files. The window
-  reads keep their bounds checks, which the compiler can't drop
-  ([findings](../docs/goose-findings.md#bounds-check-elimination-doesnt-combine-facts-about-a-difference)),
-  and strict aliasing gave at most 3 percent. Next is `end_block` and the per-symbol
-  path: `end_block` takes 11.2 ms of a level 1 `dickens` run against libdeflate's 7.2,
-  and level 1 is the furthest behind, at 0.56 to 0.66. The `build/task005/port/`
-  prototypes and sampler (`CLAUDE.local.md`) are the starting point.
-- libdeflate's search costs less per position on `x-ray` with the same work, at both
-  levels.
+Next is step 5, zstd (2026-10-13). Left for DEFLATE, after it:
+
+- Level 1's blocks as libdeflate's `deflate_compress_fastest` makes them: up to 64 KB
+  of input or 8,192 matches, with literals counted as runs and read back from the
+  window when the block is written, not stored a symbol each. It changes the output
+  slightly; the gain is unmeasured.
+- libdeflate's search costs less per position on `x-ray` with the same work, at
+  levels 1 and 6.
 - libdeflate's 3-byte matches and adaptive minimum length bring output within 1
   percent of its own, but cost up to 30 percent of the rate in the current table
-  layout; revisit after the above.
+  layout.
+
+The `build/task005/port/` prototypes and sampler (`CLAUDE.local.md`) are the starting
+point for each.
 
 The package is slower than libdeflate and zlib-ng at every level on both machines
 (`docs/results.md`). Its rate should at worst match theirs. If the Goose encoder can't get
