@@ -43,6 +43,6 @@ tasks by number ("task 001"), not by path, so a move breaks no reference.
 
 Task 001 is the DEFLATE encoder with the gzip and zlib wrappers, goose-http's task
 022.02, in steps that each give valid output; goose-http can build against step 1.
-zstd follows as a task of its own once task 001 is measured. Task 003 takes the
+zstd, task 004, follows now that task 001 is measured. Task 003 takes the
 encoder's speed past task 001's. Task 002, brotli, waits on
 a measurement that shows it's needed.
