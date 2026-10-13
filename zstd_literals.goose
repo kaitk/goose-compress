@@ -29,19 +29,15 @@ struct ZstdLits {
     // The code's description, its weights direct or FSE coded (§4.2.1.1).
     ndesc: i64 = 0,
     desc: u8[128],
-    // The literals go in one stream below 256 of them, else four. Each
-    // stream's bytes, and where its last literal is: in run `run` of the
-    // block, which starts at lo, just before hi. Run j is the literals of
-    // sequence j, and run nseq the literals after the last match.
+    // The literals go in one stream below 256 of them, else four, each a
+    // quarter of them but the last. Each stream's bytes.
     nstreams: i64 = 1,
     bytes: i64[4],
-    run: i64[4],
-    lo: i64[4],
-    hi: i64[4],
 }
 
-// Plans the n literals of `data`, the block, from its sequences, into l.
-fn plan_literals(seqs: const u64[:], data: const u8[:], n: i64, l: ZstdLits&) {
+// Plans the block's literals, `lits`, into l.
+fn plan_literals(lits: const u8[:], l: ZstdLits&) {
+    let n = lits.len;
     l.n = n;
     l.kind = ZSTD_RAW;
     l.lh = if n < 32 { 1 } else if n < 4096 { 2 } else { 3 };
@@ -50,55 +46,35 @@ fn plan_literals(seqs: const u64[:], data: const u8[:], n: i64, l: ZstdLits&) {
     l.nstreams = if n < 256 { 1 } else { 4 };
     let seg = if l.nstreams == 1 { n } else { (n + 3) / 4 };
 
-    // Each stream's byte counts, at hist[256 * k], and where it ends. Bytes
-    // are counted 4 at a time in 4 tables, so a run of one byte doesn't make
-    // each count wait for the one before.
+    // Each stream's byte counts, at hist[256 * k]. Bytes are counted 4 at a
+    // time in 4 tables, so a run of one byte doesn't make each count wait for
+    // the one before.
     var hist: u32[1024] = [0; 1024];
     var freq: u32[256] = [0; 256];
     var c0: u32[256] = [0; 256];
     var c1: u32[256] = [0; 256];
     var c2: u32[256] = [0; 256];
     var c3: u32[256] = [0; 256];
-    var k = 0;
-    var bound = seg;
-    var li = 0;
-    var at = 0;
-    for j in seqs.len + 1 {
-        let s = if j < seqs.len { seqs[j] } else { (data.len - at) as! u64 };
-        let rend = at + (s & 0xFFFFF) as i64;
-        var r = at;
-        while r < rend {
-            let stop = min(rend, r + bound - li);
-            let run = data[r..stop];
-            var q = 0;
-            while q + 4 <= run.len {
-                c0[run[q]]++;
-                c1[run[q + 1]]++;
-                c2[run[q + 2]]++;
-                c3[run[q + 3]]++;
-                q += 4;
-            }
-            for b in run[q..] { c0[b]++; }
-            li += stop - r;
-            r = stop;
-            if li == bound {
-                for x, b in c0 {
-                    let c = x + c1[b] + c2[b] + c3[b];
-                    hist[(k << 8) + b] = c;
-                    freq[b] += c;
-                }
-                for &x in c0 { x = 0; }
-                for &x in c1 { x = 0; }
-                for &x in c2 { x = 0; }
-                for &x in c3 { x = 0; }
-                l.run[k] = j;
-                l.lo[k] = at;
-                l.hi[k] = r;
-                k++;
-                bound = min(bound + seg, n);
-            }
+    for k in l.nstreams {
+        let run = lits[k * seg..min((k + 1) * seg, n)];
+        var q = 0;
+        while q + 4 <= run.len {
+            c0[run[q]]++;
+            c1[run[q + 1]]++;
+            c2[run[q + 2]]++;
+            c3[run[q + 3]]++;
+            q += 4;
         }
-        at = rend + ((s >> 20) & 0xFFFFF) as i64;
+        for b in run[q..] { c0[b]++; }
+        for x, b in c0 {
+            let c = x + c1[b] + c2[b] + c3[b];
+            hist[(k << 8) + b] = c;
+            freq[b] += c;
+        }
+        for &x in c0 { x = 0; }
+        for &x in c1 { x = 0; }
+        for &x in c2 { x = 0; }
+        for &x in c3 { x = 0; }
     }
 
     var kinds = 0;
@@ -242,9 +218,9 @@ fn put_weights_fse(w: const u8[:], b: Bits&) -> bool {
 }
 
 // Writes the literals l planned.
-fn put_literals(seqs: const u64[:], out: u8[>..]&, data: const u8[:], l: ZstdLits&) {
+fn put_literals(out: u8[>..]&, lits: const u8[:], l: ZstdLits&) {
     if l.kind == ZSTD_COMPRESSED {
-        put_huff_literals(seqs, out, data, l);
+        put_huff_literals(out, lits, l);
         return;
     }
     let n = l.n;
@@ -260,19 +236,13 @@ fn put_literals(seqs: const u64[:], out: u8[>..]&, data: const u8[:], l: ZstdLit
         out.push(l.rle);
         return;
     }
-    var at = 0;
-    for s in seqs {
-        let lits = (s & 0xFFFFF) as i64;
-        out.append(data[at..at + lits]);
-        at += lits + ((s >> 20) & 0xFFFFF) as i64;
-    }
-    out.append(data[at..]);
+    out.append(lits);
 }
 
 // The header, whose sizes take 10, 14, or 18 bits each as it's 3, 4, or 5
 // bytes; the code's description; with four streams, the sizes of the first
 // three; then the streams.
-fn put_huff_literals(seqs: const u64[:], out: u8[>..]&, data: const u8[:], l: ZstdLits&) {
+fn put_huff_literals(out: u8[>..]&, lits: const u8[:], l: ZstdLits&) {
     let bits = if l.lh == 3 { 10 } else if l.lh == 4 { 14 } else { 18 };
     let format = if l.lh > 3 { l.lh - 2 } else if l.nstreams == 4 { 1 } else { 0 };
     let h = ZSTD_COMPRESSED | format << 2 | l.n << 4 | l.csize << (4 + bits);
@@ -281,54 +251,39 @@ fn put_huff_literals(seqs: const u64[:], out: u8[>..]&, data: const u8[:], l: Zs
     if l.nstreams == 4 {
         for i in 3 { put_le16(out, l.bytes[i] as! u16); }
     }
-    let seg = (l.n + 3) / 4;
+    let seg = if l.nstreams == 1 { l.n } else { (l.n + 3) / 4 };
     for i in l.nstreams {
-        let count = if l.nstreams == 1 { l.n } else if i < 3 { seg } else { l.n - 3 * seg };
-        put_huff_stream(seqs, out, data, l, i, count);
+        put_huff_stream(out, lits[i * seg..min((i + 1) * seg, l.n)], l, i);
     }
 }
 
-// Stream i of `count` literals, which a decoder reads from its end: so it's
-// written from the last literal to the first, walking the runs back from
-// where the stream ends, then a 1 bit.
-fn put_huff_stream(seqs: const u64[:], out: u8[>..]&, data: const u8[:], l: ZstdLits&,
-                   i: i64, count: i64) {
+// Stream i, of `run`, which a decoder reads from its end: so it's written
+// from the last literal to the first, then a 1 bit.
+fn put_huff_stream(out: u8[>..]&, run: const u8[:], l: ZstdLits&, i: i64) {
     var buf: u8[STAGE + 16] = [0; STAGE + 16];
     var o = 0;
     var sent = 0;
     var bits: u64 = 0;
     var nbits = 0;
-    var j = l.run[i];
-    var lo = l.lo[i];
-    var hi = l.hi[i];
-    var left = count;
-    loop {
-        let run = data[hi - min(hi - lo, left)..hi];
-        // Four codes take at most 44 bits, so with the fewer than 8 left over
-        // they fit a u64, whose shifts stop short of 64.
-        var q = run.len;
-        while q > 0 {
-            put_le64(buf[o..o + 8], bits);
-            o += nbits >> 3;
-            bits >>= nbits & ~7;
-            nbits &= 7;
-            if o >= STAGE {
-                out.append(buf[..o]);
-                sent += o;
-                o = 0;
-            }
-            for t in min(q, 4) {
-                q--;
-                let b = run[q];
-                bits |= (l.code[b] as u64) << nbits;
-                nbits += l.len[b];
-            }
+    // Four codes take at most 44 bits, so with the fewer than 8 left over
+    // they fit a u64, whose shifts stop short of 64.
+    var q = run.len;
+    while q > 0 {
+        put_le64(buf[o..o + 8], bits);
+        o += nbits >> 3;
+        bits >>= nbits & ~7;
+        nbits &= 7;
+        if o >= STAGE {
+            out.append(buf[..o]);
+            sent += o;
+            o = 0;
         }
-        left -= run.len;
-        guard left > 0 else { break; }
-        j--;
-        hi = lo - ((seqs[j] >> 20) & 0xFFFFF) as i64;
-        lo = hi - (seqs[j] & 0xFFFFF) as i64;
+        for t in min(q, 4) {
+            q--;
+            let b = run[q];
+            bits |= (l.code[b] as u64) << nbits;
+            nbits += l.len[b];
+        }
     }
     put_le64(buf[o..o + 8], bits);
     o += nbits >> 3;

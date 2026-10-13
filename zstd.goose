@@ -76,6 +76,9 @@ struct ZstdEncoder {
     nseq: i64 = 0,
     matched: i64 = 0,
     seqs: u64[ZSTD_SEQ_MAX],
+    // The block's literals, copied in order as each sequence is stored.
+    nlit: i64 = 0,
+    lits: u8[ZSTD_BLOCK_MAX],
     // Each sequence's literal length, offset, and match length codes.
     llc: u8[ZSTD_SEQ_MAX],
     ofc: u8[ZSTD_SEQ_MAX],
@@ -193,6 +196,7 @@ fn next_block(e: ZstdEncoder&, out: u8[>..]&, end: i64, last: bool) {
     let start = e.pos;
     e.nseq = 0;
     e.matched = 0;
+    e.nlit = 0;
     let stop = if e.level == 1 { match_zstd_fast(e, start, end) }
                else { match_zstd_dfast(e, start, end) };
     zstd_block(e, out, start, stop, last && stop == end);
@@ -248,7 +252,7 @@ fn match_zstd_fast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
             off1 = d;
         }
         let len = 4 + match_len(e.win, p - d + 4, p + 4, end - p - 4);
-        zstd_seq(e, p - anchor, d, len);
+        zstd_seq(e, anchor, p - anchor, d, len);
         ip = p + len;
         anchor = ip;
         guard e.nseq < ZSTD_SEQ_MAX else { break; }
@@ -263,7 +267,7 @@ fn match_zstd_fast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
             off2 = off1;
             off1 = t;
             e.head[hash_zstd(load64(e.win, ip))] = (e.base + ip) as! u32;
-            zstd_seq(e, 0, off1, n);
+            zstd_seq(e, ip, 0, off1, n);
             ip += n;
             anchor = ip;
             guard e.nseq < ZSTD_SEQ_MAX else { break; }
@@ -372,7 +376,7 @@ fn match_zstd_dfast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
             // shortest match.
             if step < 4 { e.long[hl1] = (e.base + ip1) as! u32; }
         }
-        zstd_seq(e, p - anchor, d, len);
+        zstd_seq(e, anchor, p - anchor, d, len);
         ip = p + len;
         anchor = ip;
         guard e.nseq < ZSTD_SEQ_MAX else { break; }
@@ -390,7 +394,7 @@ fn match_zstd_dfast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
             let v = load64(e.win, ip);
             e.long[hash_long(v)] = (e.base + ip) as! u32;
             e.head[hash_short(v)] = (e.base + ip) as! u32;
-            zstd_seq(e, 0, off1, n);
+            zstd_seq(e, ip, 0, off1, n);
             ip += n;
             anchor = ip;
             guard e.nseq < ZSTD_SEQ_MAX else { break; }
@@ -402,7 +406,10 @@ fn match_zstd_dfast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
     return if e.nseq == ZSTD_SEQ_MAX { anchor } else { end };
 }
 
-fn zstd_seq(e: ZstdEncoder&, lits: i64, dist: i64, len: i64) {
+// Stores a sequence: the literals win[from..from + lits], then a match.
+fn zstd_seq(e: ZstdEncoder&, from: i64, lits: i64, dist: i64, len: i64) {
+    copy_into(e.lits[e.nlit..e.nlit + lits], e.win[from..from + lits]);
+    e.nlit += lits;
     e.seqs[e.nseq] = lits as! u64 | (len as! u64) << 20 | (dist as! u64) << 40;
     e.nseq++;
     e.matched += len;
@@ -417,8 +424,12 @@ fn zstd_block(e: ZstdEncoder&, out: u8[>..]&, start: i64, end: i64, last: bool) 
     let run = is_run(data);
     if !run {
         let seqs = e.seqs[..e.nseq];
+        // The literals after the last match.
+        let nl = data.len - e.matched;
+        copy_into(e.lits[e.nlit..nl], data[data.len - (nl - e.nlit)..]);
+        let lits = e.lits[..nl];
         var l = ZstdLits { .. };
-        plan_literals(seqs, data, data.len - e.matched, l);
+        plan_literals(lits, l);
         var count: i64[3 * FSE_SYMS] = [0; 3 * FSE_SYMS];
         let r0, r1, r2 = code_seqs(e, count);
         let n = e.nseq;
@@ -451,7 +462,7 @@ fn zstd_block(e: ZstdEncoder&, out: u8[>..]&, start: i64, end: i64, last: bool) 
         if bound < data.len || size < data.len {
             let at = out.len;
             put_le24(out, 0);
-            put_literals(seqs, out, data, l);
+            put_literals(out, lits, l);
             if n < 128 {
                 out.push(n as! u8);
             } else if n < 0x7F00 {
