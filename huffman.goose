@@ -1,6 +1,6 @@
 // Huffman codes for DEFLATE's dynamic blocks: code lengths limited to a number
 // of bits, built from symbol frequencies, and the canonical codes they define
-// (RFC 1951 §3.2.2).
+// (RFC 1951 §3.2.2). zstd's literals take the lengths alone.
 namespace compress;
 
 import std;
@@ -29,6 +29,12 @@ struct Huff {
 // complete again. The lengths then go out in order, longest to the least
 // frequent symbol.
 fn huff_build(freq: const u32[:], h: Huff&, limit: i64) {
+    huff_lengths(freq, h, limit);
+    huff_codes(h);
+}
+
+// Sets h.len as huff_build does, and leaves h.code alone.
+fn huff_lengths(freq: const u32[:], h: Huff&, limit: i64) {
     assert(freq.len <= HUFF_MAX && limit <= 15);
     for i in HUFF_MAX { h.len[i] = 0; }
     // Each used symbol as its frequency above bit 9 and the symbol below, so
@@ -45,7 +51,6 @@ fn huff_build(freq: const u32[:], h: Huff&, limit: i64) {
         let s = if n == 1 { (keys[0] & 511) as! i64 } else { 0 };
         h.len[s] = 1;
         h.len[if s == 0 { 1 } else { 0 }] = 1;
-        huff_codes(h);
         return;
     }
     sort(keys[..n]);
@@ -121,7 +126,6 @@ fn huff_build(freq: const u32[:], h: Huff&, limit: i64) {
         }
         l--;
     }
-    huff_codes(h);
 }
 
 // Sets each symbol's code from the lengths: the canonical code, in which codes

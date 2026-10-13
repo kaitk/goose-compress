@@ -77,9 +77,9 @@ program that imports both builds with one compiler.
    32,768, and that a stream's bytes don't depend on how its input was split across
    writes, at levels 0, 1, 2, 6, and 9. Each exact-byte stream at level 1 and up was
    checked by decompressing it with Python's `zlib`. For zstd, it checks XXH64 against
-   known values, and the exact bytes of empty, raw, RLE, and two compressed blocks, the
-   second across a flush with a repeat offset, each checked with `zstd -d` and
-   `compression.zstd`.
+   known values, and the exact bytes of empty, raw, RLE, and three compressed blocks:
+   two with sequences, the second across a flush with a repeat offset, and one of
+   Huffman literals alone. Each was checked with `zstd -d` and `compression.zstd`.
 3. `goose build` of `test/encode.goose` into `build/encode`, a command that compresses
    a file at a level, one-shot or by a plan of writes and flushes.
 4. `scripts/roundtrip.py`: `build/encode` on each input in gzip, zlib, and raw DEFLATE,
@@ -93,8 +93,9 @@ program that imports both builds with one compiler.
    runs and repeated blocks, bytes that repeat at distances 32,767, 32,768, and 32,769,
    random bytes with runs copied from up to 40 KB back, 16,000 bytes whose optimal
    Huffman code needs 17 bits, bytes that repeat at 131,071 and 131,072, at the edge of
-   zstd's window and past it, and 5-byte words with a random byte between, which fill
-   a zstd block's 16,384 sequences. The plans write in 257-byte pieces, which end
+   zstd's window and past it, 5-byte words with a random byte between, which fill
+   a zstd block's 16,384 sequences, and skewed bytes of nearly every value, which zstd
+   codes with 11-bit Huffman codes and FSE-coded weights. The plans write in 257-byte pieces, which end
    inside matches, and flush every 1,000 and every 32,769 bytes, so matches run across
    writes and flushes. One-shot at level 1 and up, inputs that repeat must compress
    below a limit set for each, a few percent above what level 1 reaches, in DEFLATE
@@ -108,10 +109,10 @@ program that imports both builds with one compiler.
 GOOSE=../goose/build-macos/goose scripts/test.sh
 ```
 
-It took about 32 s on the M1 Pro (2026-10-13) and 51 s on the Ryzen under Git Bash,
+It took about 36 s on the M1 Pro (2026-10-13) and 51 s on the Ryzen under Git Bash,
 where starting a process costs more (2026-10-12, before zstd's tests). A program run
 through TinyCC compiles at `-O1` without a C compiler, so the unit tests start fast;
-`encode` is built with `goose build` because `roundtrip.py` runs it 3,570 times.
+`encode` is built with `goose build` because `roundtrip.py` runs it 3,723 times.
 
 To try one stream by hand:
 
@@ -198,7 +199,12 @@ build/bench/bench 6 build/bench/corpus/mozilla 20 & sleep 1; sample bench 4 -fil
 - A rebuilt zlib-ng keeps options from its CMake cache: delete `build/bench/zlib-ng`
   after changing its options in `bench/build.sh`.
 - A constant plus a `u8` is a `u8`: `t[768 + b[4]]` fails with "constant 768 does not
-  fit u8". Write `768 + b[4] as i64`.
+  fit u8". Write `768 + b[4] as i64`. A product wraps with no error: `w[i] * 64` is
+  0 for a `w[i]` of 4. Write `(w[i] as i64) * 64`.
+- A fixed-size struct passed to an untyped (generic) parameter is a copy, so writes to
+  it are lost without a warning: pass `&f` (spec §7.2).
+- Shift counts are masked to the type's width (spec §6.2), so `bits >>= 64` leaves
+  `bits` as it was. A bit buffer that can fill to 64 bits needs its flush before then.
 - `x as i64..end` parses as the variable-mode type `i64..`: write `(x as i64)..end`.
   Likewise `x as i64 & (m)` parses as the reference type `i64&` followed by a call
   ("this expression cannot be called"): write `(x as i64) & m`.

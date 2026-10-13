@@ -211,6 +211,21 @@ until the task named beside it confirms or replaces it.
   when it's one repeated byte. The sequences' bitstream is counted exactly before it's
   written, because the block header holds its size: a bound computed in the forward
   pass, to skip the count, was 2 to 3 percent slower (task 004 step 2, 2026-10-13).
+- **zstd literals are Huffman coded per block, or RLE, or raw, whichever is
+  shortest**, counted to the byte before the block is written. The code is built from
+  the block's counts with DEFLATE's length-limited builder, cut to zstd's 11 bits, in
+  one stream below 256 literals and four from 256, as libzstd splits them. Its weights
+  go 4 bits each or FSE coded at accuracy 5, the log libzstd's `FSE_optimalTableLog`
+  gives them, where that's shorter. Literals whose most common byte is no more than
+  1/128 of them and 4 stay raw without a code built, libzstd's guess. A block of
+  literals alone is compressed too. Silesia's output went from 0.4246 of its input to
+  0.3768, against `zstd -1`'s 0.3457, for 17 to 22 percent of the rate (task 004 step
+  3, 2026-10-13, [results](../results-history.md#zstd-huffman-literals-task-004-step-3)).
+- **Each zstd literal stream's counts are kept apart** while the literals are counted,
+  so the four streams' sizes for the jump table are known before any is written, and
+  no buffer of literals or coded bytes is held: each stream is written by walking the
+  sequences back from where it ends. A literals buffer would add 128 KB to each
+  `ZstdEncoder` (task 004 step 3, 2026-10-13).
 
 ## Proposed
 

@@ -113,6 +113,14 @@ def deep_code(r, n=16_000, rare=12, bulk=32):
     return bytes(out)
 
 
+def skewed(r, n):
+    """Bytes of nearly every value, each about 0.96 times as likely as the
+    one before, with few matches: zstd codes them with a Huffman code cut to
+    its 11 bits, and FSE codes the code's weights, more than the 128 it can
+    send 4 bits each."""
+    return bytes(min(255, int(r.expovariate(0.04))) for _ in range(n))
+
+
 def short_matches(r, n):
     """Five-byte words from a set of 16, each followed by a random byte: a
     sequence every 6 bytes or so, more than a zstd block holds."""
@@ -129,13 +137,12 @@ def inputs():
     take at level 1 and up, as a share of the input, in DEFLATE and in zstd:
     a few percent over what level 1 reaches. Where DEFLATE's stronger levels
     do better, its limit is a pair: the one from level 1, then the one from
-    STRONG_LEVEL, a few percent over what level 6 reaches. zstd's literals
-    are raw, so its limits are looser where literals are many."""
+    STRONG_LEVEL, a few percent over what level 6 reaches."""
     r = random.Random(3)
     yield "empty", b"", None, None
     yield "one byte", b"a", None, None
-    yield "text", text(100_000), (0.24, 0.19), 0.34
-    yield "json", json_doc(), (0.235, 0.205), 0.345
+    yield "text", text(100_000), (0.24, 0.19), 0.335
+    yield "json", json_doc(), (0.235, 0.205), 0.235
     # Stored where a code would grow it.
     yield "random", r.randbytes(300_000), 1.001, 1.001
     for n in (STORED_MAX - 1, STORED_MAX, STORED_MAX + 1, 2 * STORED_MAX,
@@ -154,14 +161,15 @@ def inputs():
     # Out of DEFLATE's reach: nothing to match, so stored.
     yield "repeats at 32769", repeats_at(r, WSIZE + 1, 4 * WSIZE), 1.001, 0.26
     yield "copies within 40 KB", copies(r, 200_000), (0.39, 0.375), 0.43
-    yield "a code past 15 bits", deep_code(r), 0.66, 1.001
+    yield "a code past 15 bits", deep_code(r), 0.66, 0.67
     # At the edge of zstd's window, and out of its reach.
     r = random.Random(5)
     yield ("repeats at 131071", repeats_at(r, ZSTD_WINDOW - 1, 3 * ZSTD_WINDOW),
            1.001, 0.345)
     yield ("repeats at 131072", repeats_at(r, ZSTD_WINDOW, 3 * ZSTD_WINDOW),
            1.001, 1.001)
-    yield "short matches", short_matches(r, 300_000), 0.39, 0.64
+    yield "short matches", short_matches(r, 300_000), 0.39, 0.62
+    yield "skewed bytes", skewed(r, 300_000), 0.79, 0.795
 
 
 def plans(n):

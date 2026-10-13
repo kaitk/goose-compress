@@ -82,7 +82,7 @@ levels; step 2 kept the 128 KB window, and the levels stay proposed:
       Python's `compression.zstd` on the inputs `scripts/roundtrip.py` covers, flushes
       included, and XXH64 checked against known values
 - [x] Step 2: level 1 matches into compressed blocks, passing the same tests
-- [ ] Step 3: Huffman literals, passing the same tests
+- [x] Step 3: Huffman literals, passing the same tests
 - [ ] Step 4: FSE tables per block, passing the same tests, with a fuzz run
 - [ ] Step 5: level 3, passing the same tests
 - [ ] Step 6: libzstd built in `bench/` in release mode, and rate and ratio at levels
@@ -115,3 +115,20 @@ GB/s on `x-ray`, against step 1's 8.7 GB/s copy
 `scripts/roundtrip.py` holds each input to a zstd size limit, with inputs at the
 window's edge and one that fills a block's 16,384 sequences. The unit tests check the
 exact bytes of two compressed blocks, the second using a repeat offset.
+
+## Step 3
+
+Done (2026-10-13). Each block's literals are Huffman coded with a code built from the
+block's counts, cut to 11 bits, in one stream below 256 literals and four from 256;
+RLE where they're one byte; or raw where that's no larger. The code's weights go
+4 bits each, or FSE coded at accuracy 5 where that's shorter, as they must be past
+128 of them. A block of literals alone is compressed too. On the M1 Pro, the 12
+Silesia files come to 0.3768 of their size, from step 2's 0.4246, against `zstd -1`'s
+0.3457; on `x-ray`, nearly all literals, within 0.1 percent of libzstd. Rates fell 17
+to 22 percent on six of seven files, to 134 to 459 MB/s, and `x-ray` went from 2.3
+GB/s, a copy, to 596 MB/s. `compress` of 100 bytes takes 3.5 µs, from 1.3
+([results](../docs/results-history.md#zstd-huffman-literals-task-004-step-3)).
+`scripts/roundtrip.py` adds skewed bytes of nearly every value, which take 11-bit codes
+and FSE-coded weights, and holds text, JSON, and the other inputs with literals to
+tighter zstd limits. A unit test checks the exact bytes of a block of Huffman literals.
+Step 4 should beat 0.3768 on Silesia.

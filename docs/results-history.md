@@ -574,6 +574,82 @@ sequence's codes in the forward pass. Not kept.
 
 A zstd `reset` clears only the hash table, 131,072 bytes.
 
+### zstd Huffman literals: task 004 step 3
+
+2026-10-13, Goose `a6249a4`, `goose build` defaults with Apple clang 21.0.0. Step 2's
+level 1 and predefined FSE tables, with each block's literals Huffman coded from the
+block's counts, RLE where they're one byte, or raw where that's shorter. A block of
+literals alone is compressed too. Measured as for step 2, with the same commands; the
+machine was otherwise idle (`ps`).
+
+Ratio, output over input, on the 12 Silesia files. The `zstd -1` columns are step 2's,
+from the zstd 1.5.7 command line.
+
+| File | Step 2 | Step 3 | zstd -1 | zstd -1, raw literals |
+|---|---:|---:|---:|---:|
+| dickens | 0.5513 | 0.4748 | 0.4182 | 0.5752 |
+| webster | 0.4287 | 0.3675 | 0.3297 | 0.4277 |
+| xml | 0.1884 | 0.1670 | 0.1300 | 0.1576 |
+| nci | 0.1298 | 0.1097 | 0.0851 | 0.1037 |
+| mozilla | 0.4558 | 0.4242 | 0.3901 | 0.4306 |
+| samba | 0.3150 | 0.2866 | 0.2546 | 0.2960 |
+| x-ray | 0.9972 | 0.7986 | 0.7992 | 0.9994 |
+| mr | 0.5238 | 0.4278 | 0.3829 | 0.5165 |
+| ooffice | 0.6522 | 0.5786 | 0.5841 | 0.6847 |
+| osdb | 0.4174 | 0.3877 | 0.3697 | 0.4133 |
+| reymont | 0.4250 | 0.3965 | 0.3245 | 0.3825 |
+| sao | 0.8784 | 0.8499 | 0.8617 | 0.9045 |
+| total | 0.4246 | 0.3768 | 0.3457 | 0.4127 |
+
+The output is 11 percent smaller than step 2's and 9.0 percent larger than libzstd's,
+from 1.4 percent smaller (`sao`) to 29 percent larger (`nci`). On `x-ray`, nearly all
+literals, the two are within 0.1 percent. libzstd still codes its sequences with FSE
+tables built per block (step 4), from a 512 KB window.
+
+Rate, MB/s, `bench 1 FILE 10 zstd`, 5 alternating rounds of the two builds, the median
+of the rounds' medians; each file's rounds varied by under 1 percent, `x-ray`'s by 1.9.
+
+| File | Step 2 | Step 3 | Change |
+|---|---:|---:|---:|
+| dickens | 168.6 | 134.4 | -20% |
+| webster | 208.7 | 166.8 | -20% |
+| xml | 421.2 | 347.6 | -17% |
+| nci | 560.3 | 459.2 | -18% |
+| mozilla | 292.1 | 226.6 | -22% |
+| samba | 322.3 | 261.8 | -19% |
+| x-ray | 2,275.6 | 596.4 | -74% |
+
+On `webster`, counting the literals and coding them take about a fifth of the time,
+as much as the sequences (`sample`). `x-ray`'s blocks were stored raw in step 2, so its
+rate was a copy's; now nearly all of it is literals to code. Three changes made step 3
+faster before the numbers above, measured with `bench 1 FILE 10 zstd` on `x-ray` and
+`webster`, and for small inputs with the program below:
+
+- Counting the bytes 4 at a time into 4 tables, as libzstd's `HIST_count_parallel`
+  does: `x-ray` 428 to 583 MB/s, since its 16-bit samples repeat bytes and each count
+  of one table waited on the one before. `webster` within 2 percent.
+- Coding 4 literals between stores of the bit buffer, from a slice, in place of a store
+  checked after each: `x-ray` 375 to 428 MB/s, `webster` 163 to 166.
+- Literals-only and small blocks pay a fixed cost: building the code, its description,
+  and zeroing the tables. `compress` of the first 100 bytes of `dickens` took 6.6 µs
+  at first. Lengths without DEFLATE's bit-reversed codes, codes assigned in one pass
+  over the bytes used, a weights table of 12 symbols in place of the 53 of the
+  sequences' `Fse`, counts summed as the streams' tables merge, and FSE coding the
+  weights at accuracy 5 only, brought it to 3.5 µs.
+
+Accuracy 5 for the weights is the log libzstd's `FSE_optimalTableLog` gives any count
+of Huffman weights. Trying 6 too and keeping the smaller saved at most 116 bytes on a
+file (`mozilla`), out of 21.7 MB.
+
+`compress::compress` on the first N bytes of `dickens`, level 1, best of 5 averages of
+20,000,000 / (N + 2,000) calls, µs a call, as for step 2:
+
+| Format | 100 bytes | 1,000 bytes | 10,000 bytes |
+|---|---:|---:|---:|
+| gzip | 7.6 | 10.9 | 38.6 |
+| zstd, step 2 | 1.3 | 3.2 | 24.5 |
+| zstd, step 3 | 3.5 | 7.0 | 35.0 |
+
 ## AMD Ryzen 7 5800X3D, Windows
 
 - Desktop on an MSI `MS-7A34` board, AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,

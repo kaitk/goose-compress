@@ -20,7 +20,7 @@ shortest.
 | 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.05 to 1.7 times slower than zlib-ng and libdeflate at levels 1 and 6 on an M1 Pro, 1.2 to 2.3 times on a Ryzen ([results](docs/results.md)). |
 | 🟢 | zlib (HTTP's `deflate`) | The same DEFLATE stream as gzip, with the zlib header and Adler-32. |
 | 🟢 | Raw DEFLATE | The same stream with no wrapper. |
-| 🟡 | zstd | Level 1 matching into compressed blocks, with raw literals and the predefined FSE tables; every level runs it. Huffman literals, FSE tables per block, and level 3 are next (task 004). |
+| 🟡 | zstd | Level 1 matching into compressed blocks, with Huffman literals and the predefined FSE tables; every level runs it. FSE tables per block and level 3 are next (task 004). |
 | 🔴 | Brotli | Out of scope: HTTP servers serve it precompressed (task 002). |
 | 🔴 | Decoding | Out of scope for now. |
 
@@ -94,16 +94,17 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
   - Matches reach back 32,768 bytes, across writes and flushes.
 - **`compress::zstd_encoder(level = 3)`**: a zstd stream, `compress::ZstdEncoder`,
   with zstd's levels 1 to 22, each running level 1 for now: libzstd's fast matcher,
-  with each block's literals raw and its sequences coded with the predefined FSE
-  tables. A block is compressed where that's smaller, else raw, or RLE for one
-  repeated byte. `compress::compress(data, out, compress::ZSTD, level)` takes the same
-  levels. It overloads `reset(e, level)`, `write`, `flush`, and `finish`, which keep
-  the contracts above, except that `flush` writes the input held as blocks and nothing
+  with each block's literals Huffman coded from its counts, RLE, or raw, whichever is
+  shortest, and its sequences coded with the predefined FSE tables. A block is
+  compressed where that's smaller, else raw, or RLE for one repeated byte.
+  `compress::compress(data, out, compress::ZSTD, level)` takes the same levels. It
+  overloads `reset(e, level)`, `write`, `flush`, and `finish`, which keep the contracts
+  above, except that `flush` writes the input held as blocks and nothing
   more: zstd blocks end on a byte boundary. The frame declares a 128 KB window, which
   matches reach across writes and flushes, and ends with the low 32 bits of the
   input's XXH64. A `ZstdEncoder` is a fixed-size value of 557,232 bytes: the window,
   a 128 KB block, and 32 KB to slide by, a 128 KB hash table, and 128 KB of sequences.
-  Its `reset` clears only the hash table; `compress` of 100 bytes takes 1.4 µs on an
+  Its `reset` clears only the hash table; `compress` of 100 bytes takes 3.5 µs on an
   M1 Pro.
 - **`compress::crc32(crc, data)`** and **`compress::adler32(adler, data)`**: the
   checksums, continuing from a previous value. Start CRC-32 at 0 and Adler-32 at 1.
@@ -162,22 +163,28 @@ checked first, one byte of backward extension for it, the step that grows with t
 distance from the last match, the two positions it hashes after a match, and the
 offset before last tried at once; and its blocks of at most 128 KB matched whole, as
 its streaming API buffers them. The 6-byte hash and the 2^15-entry table are
-klauspost's `enc_fast.go` (`klauspost/compress`). The block format, the predefined
-FSE tables, and the bitstream's order come from RFC 8878.
+klauspost's `enc_fast.go` (`klauspost/compress`). From libzstd's literals: one
+Huffman stream below 256 literals and four above, the guess that skips building a code
+for literals with no byte more common than 1/128 of them (`HUF_compress_internal`),
+counting bytes into 4 tables (`HIST_count_parallel`), and the weights' FSE accuracy of
+5 (`FSE_optimalTableLog`). The block format, the predefined FSE tables, the Huffman
+weights, and the bitstreams' order come from RFC 8878.
 
 ## Layout
 
 ```text
-compress.goose   the package's entry: formats, the one-shot and streaming encoders
-deflate.goose    the DEFLATE stream at levels 1 and up: LZ77, the bit writer, blocks
-huffman.goose    length-limited Huffman codes for dynamic blocks
-zstd.goose       the zstd frame, level 1 matching, and compressed blocks
-checksum.goose   CRC-32, Adler-32, and XXH64
-test/            unit tests, and encode.goose, which scripts/roundtrip.py drives
-scripts/         test scripts
-bench/           the C harness for libdeflate and zlib-ng, the Goose one, and scripts
-docs/            architecture, development setup, results, Goose findings
-tasks/           task tracking (tasks/README.md)
+compress.goose       the package's entry: formats, the one-shot and streaming encoders
+deflate.goose        the DEFLATE stream at levels 1 and up: LZ77, the bit writer, blocks
+huffman.goose        length-limited Huffman codes, for dynamic blocks and zstd's literals
+zstd.goose           the zstd frame, level 1 matching, and compressed blocks
+zstd_literals.goose  a zstd block's literals: Huffman coded, RLE, or raw
+zstd_fse.goose       zstd's FSE tables, normalized counts, and table descriptions
+checksum.goose       CRC-32, Adler-32, and XXH64
+test/                unit tests, and encode.goose, which scripts/roundtrip.py drives
+scripts/             test scripts
+bench/               the C harness for libdeflate and zlib-ng, the Goose one, and scripts
+docs/                architecture, development setup, results, Goose findings
+tasks/               task tracking (tasks/README.md)
 ```
 
 ## Pins

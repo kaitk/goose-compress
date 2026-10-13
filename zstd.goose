@@ -1,12 +1,14 @@
 // The zstd frame (RFC 8878): a header declaring the window, blocks, and the
 // low 32 bits of the content's XXH64. A block is compressed (§3.1.1.3), with
-// its literals raw and its sequences coded with the predefined FSE tables, or
-// raw or RLE where that's no larger.
+// its literals as zstd_literals.goose codes them and its sequences coded with
+// the predefined FSE tables, or raw or RLE where that's no larger.
 namespace compress;
 
 import std;
 import .checksum;
 import .deflate;
+import .zstd_fse;
+import .zstd_literals;
 
 // zstd's levels, 1 to 22, as its own. Each runs the nearest level built so far.
 let ZSTD_DEFAULT_LEVEL = 3;
@@ -248,63 +250,46 @@ fn zstd_seq(e: ZstdEncoder&, lits: i64, dist: i64, len: i64) {
 }
 
 // One block of win[start..end]: compressed where that's smaller, else raw, or
-// RLE where it's one repeated byte.
+// RLE where it's one repeated byte. A compressed block may hold literals
+// alone.
 fn zstd_block(e: ZstdEncoder&, out: u8[>..]&, start: i64, end: i64, last: bool) {
     let data = e.win[start..end];
-    let nlit = data.len - e.matched;
-    // A run of one byte is matched with a literal or none, and is smaller as
-    // an RLE block.
-    if e.nseq > 0 && !(nlit <= 1 && is_run(data)) {
+    let run = is_run(data);
+    if !run {
+        let seqs = e.seqs[..e.nseq];
+        var l = ZstdLits { .. };
+        plan_literals(seqs, data, data.len - e.matched, l);
         let r0, r1, r2 = offset_values(e);
-        let lh = if nlit < 32 { 1 } else if nlit < 4096 { 2 } else { 3 };
-        let sh = if e.nseq < 128 { 1 } else if e.nseq < 0x7F00 { 2 } else { 3 };
-        let size = lh + nlit + sh + 1 + (seq_bits(e) + 1 + 7) / 8;
+        let n = e.nseq;
+        let sh = if n == 0 { 1 } else if n < 128 { 2 } else if n < 0x7F00 { 3 } else { 4 };
+        let size = l.size + sh + (if n > 0 { (seq_bits(e) + 1 + 7) / 8 } else { 0 });
         if size < data.len {
             put_le24(out, size << 3 | ZSTD_COMPRESSED << 1 | (if last { 1 } else { 0 }));
-            put_literals(e, out, data, nlit, lh);
-            let n = e.nseq;
-            if sh == 1 {
+            put_literals(seqs, out, data, l);
+            if n < 128 {
                 out.push(n as! u8);
-            } else if sh == 2 {
+            } else if n < 0x7F00 {
                 out.append([(n >> 8 | 0x80) as! u8, n as! u8]);
             } else {
                 out.append([0xFF, (n - 0x7F00) as! u8, ((n - 0x7F00) >> 8) as! u8]);
             }
-            // Symbol_Compression_Modes: the predefined tables for all three.
-            out.push(0);
-            put_seqs(e, out);
+            if n > 0 {
+                // Symbol_Compression_Modes: the predefined tables for all three.
+                out.push(0);
+                put_seqs(e, out);
+            }
             e.rep0 = r0;
             e.rep1 = r1;
             e.rep2 = r2;
             return;
         }
     }
-    zstd_stored(out, data, last);
+    zstd_stored(out, data, run, last);
 }
 
 fn is_run(data: const u8[:]) -> bool {
     for b in data { guard b == data[0] else { return false; } }
     return data.len > 1;
-}
-
-// The block's literals, raw: the bytes between its matches and after the
-// last, with the section header (§3.1.1.3.1.1) of lh bytes.
-fn put_literals(e: ZstdEncoder&, out: u8[>..]&, data: const u8[:], nlit: i64, lh: i64) {
-    if lh == 1 {
-        out.push((nlit << 3) as! u8);
-    } else if lh == 2 {
-        let h = nlit << 4 | 1 << 2;
-        out.append([h as! u8, (h >> 8) as! u8]);
-    } else {
-        put_le24(out, nlit << 4 | 3 << 2);
-    }
-    var at = 0;
-    for s in e.seqs[..e.nseq] {
-        let lits = (s & 0xFFFFF) as i64;
-        out.append(data[at..at + lits]);
-        at += lits + ((s >> 20) & 0xFFFFF) as i64;
-    }
-    out.append(data[at..]);
 }
 
 // Replaces each sequence's distance with its offset value, as a decoder
@@ -398,55 +383,6 @@ let OF_NORM = [1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 let LL_FSE = fse_table(LL_NORM, 6);
 let ML_FSE = fse_table(ML_NORM, 6);
 let OF_FSE = fse_table(OF_NORM, 5);
-
-// An FSE table, for coding: for each state, the bits a decoder reads to move
-// on from it and the baseline they're added to; for each symbol s and state t
-// a decoder moves on to, the state of s it moves from, at enc[s * 64 + t].
-struct Fse {
-    log: i64,
-    nb: u8[64],
-    base: u16[64],
-    enc: u16[53 * 64],
-}
-
-// Builds the decoding table of a distribution as §4.1.1 does, and from it the
-// coding one.
-fn fse_table(norm: const i64[:], log: i64) -> Fse {
-    let size = 1 << log;
-    var f = Fse { log: log, .. };
-    var sym: i64[64] = [0; 64];
-    // "Less than 1" symbols take a state each from the end, the rest are
-    // spread over the others.
-    var high = size - 1;
-    for p, s in norm {
-        if p == -1 {
-            sym[high] = s;
-            high--;
-        }
-    }
-    let step = (size >> 1) + (size >> 3) + 3;
-    var at = 0;
-    for p, s in norm {
-        for i in max(p, 0) {
-            sym[at] = s;
-            at = (at + step) & (size - 1);
-            while at > high { at = (at + step) & (size - 1); }
-        }
-    }
-    var next: i64[53] = [0; 53];
-    for p, s in norm { next[s] = if p == -1 { 1 } else { p }; }
-    for u in size {
-        let s = sym[u];
-        let x = next[s];
-        next[s]++;
-        let nb = log - LOG2[x];
-        let base = (x << nb) - size;
-        f.nb[u] = nb as! u8;
-        f.base[u] = base as! u16;
-        for t in base..base + (1 << nb) { f.enc[s * 64 + t] = u as! u16; }
-    }
-    return f;
-}
 
 // One sequence's codes and extra bits: the literal length's, the match
 // length's, and the offset's.
@@ -555,9 +491,9 @@ fn put_seqs(e: ZstdEncoder&, out: u8[>..]&) {
 
 // A block of data, not compressed: one repeated byte as an RLE block, the
 // rest raw.
-fn zstd_stored(out: u8[>..]&, data: const u8[:], last: bool) {
+fn zstd_stored(out: u8[>..]&, data: const u8[:], run: bool, last: bool) {
     assert(data.len <= ZSTD_BLOCK_MAX);
-    let kind = if is_run(data) { ZSTD_RLE } else { ZSTD_RAW };
+    let kind = if run { ZSTD_RLE } else { ZSTD_RAW };
     put_le24(out, data.len << 3 | kind << 1 | (if last { 1 } else { 0 }));
     if kind == ZSTD_RLE {
         out.push(data[0]);
