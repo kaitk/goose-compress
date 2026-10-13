@@ -38,7 +38,7 @@ after those are measured. This task follows that order.
 ## Proposed decisions
 
 Recorded in `docs/architecture/README.md`. Step 1 settled all but the window and the
-levels; step 2 kept the 128 KB window, and the levels stay proposed:
+levels; step 2 kept the 128 KB window, and step 5 settled the levels:
 
 - **`compress::ZSTD` is a fourth format for `compress`**, so goose-http picks an
   encoding with one argument. The stream is a `ZstdEncoder` of its own, with
@@ -84,7 +84,7 @@ levels; step 2 kept the 128 KB window, and the levels stay proposed:
 - [x] Step 2: level 1 matches into compressed blocks, passing the same tests
 - [x] Step 3: Huffman literals, passing the same tests
 - [x] Step 4: FSE tables per block, passing the same tests, with a fuzz run
-- [ ] Step 5: level 3, passing the same tests
+- [x] Step 5: level 3, passing the same tests
 - [ ] Step 6: libzstd built in `bench/` in release mode, and rate and ratio at levels
       1 and 3 recorded in `docs/results-history.md` with how they were measured
 - [ ] Decisions above confirmed or replaced in `docs/architecture/README.md`, and the
@@ -151,3 +151,30 @@ cases each, and of seeds 4 to 6 with 3,000 cases at `--levels 1`, which makes 2 
 cases zstd, all passed. A unit test checks the exact bytes of a block with built
 tables and a block after a flush that repeats them. Step 5, level 3, should beat
 level 1's 0.3378 on Silesia, toward `zstd -3`'s 0.3124 (zstd 1.5.7, `--no-check`).
+
+## Step 5
+
+Done (2026-10-13). Level 3 is libzstd's `ZSTD_dfast` with its parameters for inputs
+up to 128 KB: a 2^16-entry table of 8-byte hashes beside level 1's 2^15-entry table,
+hashed from 5 bytes at level 3. Levels 2 and up run it. The long table makes a
+`ZstdEncoder` 879,875 bytes, from 617,727; a 2^17-entry one gained 0.15 percent for
+256 KB more. `reset` no longer clears the tables: each stream starts out of their
+entries' reach, which takes `compress` of 100 bytes from step 4's 3.6 µs to 2.5 at
+level 1 and 2.6 at level 3.
+
+On the M1 Pro, the 12 Silesia files come to 0.3251 of their size at level 3, from
+level 1's 0.3378, against `zstd -3`'s 0.3124 with its 2 MB window and 0.3335 with a
+128 KB one. Level 3 is 2 to 24 percent slower than level 1 on six of seven files, at
+109 to 421 MB/s, and 80 percent slower on `x-ray`, 120 MB/s, as libzstd's level 3 is
+84 percent slower there than its level 1. Level 1's rates are within the rounds'
+spread of step 4's
+([results](../docs/results-history.md#zstd-level-3-task-004-step-5)).
+
+`scripts/roundtrip.py` gives level 3 its own zstd limits: tighter on text, the copies,
+short matches, and the changing input, and looser on the JSON, where level 3 does
+worse than level 1, as libzstd's does. Fuzz runs of seeds 1 to 3 with 2,000 cases
+each, and of seeds 4 to 6 with 3,000 cases at `--levels 1 --zstd-levels 3`, which
+makes 1 in 4 cases zstd at level 3, all passed. A unit test checks the exact bytes of
+5-byte matches that level 3 finds and level 1 misses, and that a reset stream comes
+out as from a new encoder after streams at levels 3 and 1. Step 6 should compare
+level 1's and level 3's rates above with libzstd's built in `bench/`.

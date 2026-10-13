@@ -33,6 +33,13 @@ let ZSTD_HASH_BYTES = 6;
 // How fast level 1 steps over input where it finds no match: 1 more position
 // a probe for each 2^ZSTD_SKIP_LOG it has gone without one.
 let ZSTD_SKIP_LOG = 7;
+// Level 3's tables, as libzstd's for inputs up to 128 KB: `head` of the first
+// ZSTD_SHORT_BYTES bytes at a position, and `long` of the first 8.
+let ZSTD_SHORT_BYTES = 5;
+let ZSTD_LONG_LOG = 16;
+let ZSTD_LONG_SIZE = 1 << ZSTD_LONG_LOG;
+// Level 3's step over input with no match grows by 1 every this many bytes.
+let ZSTD_DFAST_STEP = 1 << 8;
 // A block ends when it holds this many sequences.
 let ZSTD_SEQ_MAX = 1 << 14;
 
@@ -44,8 +51,10 @@ struct ZstdEncoder {
     started: bool = false,
     finished: bool = false,
     check: Xxh64,
-    // The stream offset of win[0], modulo 2^32.
-    base: u32 = 0,
+    // The offset of win[0], counted from the tables' last clear, which the
+    // tables hold modulo 2^32. A stream starts a window past the last one's
+    // end, so no entry it finds from before is in reach.
+    base: i64 = ZSTD_WINDOW,
     // win[..fill] holds input; the next block starts at pos.
     fill: i64 = 0,
     pos: i64 = 0,
@@ -56,9 +65,11 @@ struct ZstdEncoder {
     rep2: i64 = 8,
     off1: i64 = 1,
     off2: i64 = 4,
-    // Each hash bucket's latest stream offset. An entry only suggests where a
-    // match may start, so every candidate is compared.
+    // Each hash bucket's latest offset, 0 for none. An entry only suggests
+    // where a match may start, so every candidate is compared. Level 3 uses
+    // `long` too.
     head: u32[ZSTD_HASH_SIZE],
+    long: u32[ZSTD_LONG_SIZE],
     // The block's sequences: the literal length in bits 0-19, the match
     // length from bit 20, and the distance from bit 40, which the block's
     // coding replaces with the offset value. `matched` sums the match lengths.
@@ -86,14 +97,22 @@ fn zstd_encoder(level: i64 = ZSTD_DEFAULT_LEVEL) -> ZstdEncoder {
 
 // Starts e over as a new stream, as zstd_encoder(level) would make it. The
 // window and the sequences are left as they are: nothing reads them before
-// it writes them.
+// it writes them. The hash tables are kept, with the stream starting out of
+// their entries' reach, until its offsets would pass 2^31: the stream then
+// codes as a new encoder's does for its first 2 GB, as far as the tables'
+// offsets go without wrapping either way.
 fn reset(e: ZstdEncoder&, level: i64 = ZSTD_DEFAULT_LEVEL) {
     assert(level >= 1 && level <= ZSTD_MAX_LEVEL);
     e.level = level;
     e.started = false;
     e.finished = false;
     xxh64_reset(e.check);
-    e.base = 0;
+    e.base += e.fill + ZSTD_WINDOW;
+    if e.base > 1 << 31 {
+        for &x in e.head { x = 0; }
+        for &x in e.long { x = 0; }
+        e.base = ZSTD_WINDOW;
+    }
     e.fill = 0;
     e.pos = 0;
     e.rep0 = 1;
@@ -101,7 +120,6 @@ fn reset(e: ZstdEncoder&, level: i64 = ZSTD_DEFAULT_LEVEL) {
     e.rep2 = 8;
     e.off1 = 1;
     e.off2 = 4;
-    for &x in e.head { x = 0; }
     e.nseq = 0;
     e.matched = 0;
     e.tables = false;
@@ -165,7 +183,7 @@ fn zstd_slide(e: ZstdEncoder&) {
     copy_into(e.win[..keep], e.win[shift..e.fill]);
     e.fill = keep;
     e.pos -= shift;
-    e.base += shift as! u32;
+    e.base += shift;
 }
 
 // Writes win[pos..end] as a block, or as much of it as the block's sequences
@@ -175,7 +193,8 @@ fn next_block(e: ZstdEncoder&, out: u8[>..]&, end: i64, last: bool) {
     let start = e.pos;
     e.nseq = 0;
     e.matched = 0;
-    let stop = match_zstd_fast(e, start, end);
+    let stop = if e.level == 1 { match_zstd_fast(e, start, end) }
+               else { match_zstd_dfast(e, start, end) };
     zstd_block(e, out, start, stop, last && stop == end);
     e.pos = stop;
 }
@@ -199,7 +218,7 @@ fn match_zstd_fast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
     var off2 = e.off2;
     while ip + 1 < limit {
         let probe = ip;
-        let here = e.base + ip as! u32;
+        let here = (e.base + ip) as! u32;
         let h0 = hash_zstd(load64(e.win, ip));
         let h1 = hash_zstd(load64(e.win, ip + 1));
         let c0 = e.head[h0];
@@ -234,7 +253,7 @@ fn match_zstd_fast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
         guard e.nseq < ZSTD_SEQ_MAX else { break; }
         guard ip <= limit else { continue; }
         e.head[hash_zstd(load64(e.win, probe + 2))] = here + 2;
-        e.head[hash_zstd(load64(e.win, ip - 2))] = e.base + (ip - 2) as! u32;
+        e.head[hash_zstd(load64(e.win, ip - 2))] = (e.base + ip - 2) as! u32;
         // The offset before the last, at once, as a sequence with no
         // literals: a repeat offset.
         while ip <= limit && off2 <= ip && load32(e.win, ip - off2) == load32(e.win, ip) {
@@ -242,7 +261,134 @@ fn match_zstd_fast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
             let t = off2;
             off2 = off1;
             off1 = t;
-            e.head[hash_zstd(load64(e.win, ip))] = e.base + ip as! u32;
+            e.head[hash_zstd(load64(e.win, ip))] = (e.base + ip) as! u32;
+            zstd_seq(e, 0, off1, n);
+            ip += n;
+            anchor = ip;
+            guard e.nseq < ZSTD_SEQ_MAX else { break; }
+        }
+        guard e.nseq < ZSTD_SEQ_MAX else { break; }
+    }
+    e.off1 = off1;
+    e.off2 = off2;
+    return if e.nseq == ZSTD_SEQ_MAX { anchor } else { end };
+}
+
+fn hash_short(v: u64) -> i64 {
+    return (((v << (64 - 8 * ZSTD_SHORT_BYTES)) * 0x9E3779B97F4A7C15) >> (64 - ZSTD_HASH_LOG))
+        as! i64;
+}
+
+fn hash_long(v: u64) -> i64 {
+    return ((v * 0x9E3779B97F4A7C15) >> (64 - ZSTD_LONG_LOG)) as! i64;
+}
+
+// Level 3, after libzstd's ZSTD_dfast: each position checks the last offset
+// one position on, then the long table, then the short one, where a match
+// takes the next position's long match if that's longer. A match is extended
+// backward, then forward to the block's end; after it, the offset before the
+// last is tried at once, as at level 1. The step grows by one position every
+// ZSTD_DFAST_STEP without a match. Returns where the block ends, as
+// match_zstd_fast does.
+fn match_zstd_dfast(e: ZstdEncoder&, start: i64, end: i64) -> i64 {
+    // A position is probed only with 8 bytes after it, which the hashes read.
+    let limit = end - 8;
+    var anchor = start;
+    var ip = start;
+    var off1 = e.off1;
+    var off2 = e.off2;
+    while ip + 1 <= limit {
+        var step = 1;
+        var next_step = ip + ZSTD_DFAST_STEP;
+        var ip1 = ip + 1;
+        var hl0 = hash_long(load64(e.win, ip));
+        var cl0 = e.long[hl0];
+        var hl1 = 0;
+        // The match: where it starts, its distance, and its length, with p
+        // left at -1 if the search reaches the block's end first.
+        var p = -1;
+        var d = 0;
+        var len = 0;
+        var rep = false;
+        while ip1 <= limit {
+            let here = (e.base + ip) as! u32;
+            let hs0 = hash_short(load64(e.win, ip));
+            let cs0 = e.head[hs0];
+            e.long[hl0] = here;
+            e.head[hs0] = here;
+            if off1 <= ip + 1 && load32(e.win, ip + 1 - off1) == load32(e.win, ip + 1) {
+                p = ip + 1;
+                d = off1;
+                len = 4 + match_len(e.win, p - d + 4, p + 4, end - p - 4);
+                rep = true;
+                break;
+            }
+            hl1 = hash_long(load64(e.win, ip1));
+            let dl = (here - cl0) as i64;
+            if dl >= 1 && dl < ZSTD_WINDOW && dl <= ip && load64(e.win, ip - dl) == load64(e.win, ip) {
+                p = ip;
+                d = dl;
+                len = 8 + match_len(e.win, p - d + 8, p + 8, end - p - 8);
+                break;
+            }
+            let cl1 = e.long[hl1];
+            let ds = (here - cs0) as i64;
+            if ds >= 1 && ds < ZSTD_WINDOW && ds <= ip && load32(e.win, ip - ds) == load32(e.win, ip) {
+                p = ip;
+                d = ds;
+                len = 4 + match_len(e.win, p - d + 4, p + 4, end - p - 4);
+                let d1 = ((e.base + ip1) as! u32 - cl1) as i64;
+                if d1 >= 1 && d1 < ZSTD_WINDOW && d1 <= ip1 &&
+                   load64(e.win, ip1 - d1) == load64(e.win, ip1) {
+                    let n = 8 + match_len(e.win, ip1 - d1 + 8, ip1 + 8, end - ip1 - 8);
+                    if n > len {
+                        p = ip1;
+                        d = d1;
+                        len = n;
+                    }
+                }
+                break;
+            }
+            if ip1 >= next_step {
+                step++;
+                next_step += ZSTD_DFAST_STEP;
+            }
+            ip = ip1;
+            ip1 += step;
+            hl0 = hl1;
+            cl0 = cl1;
+        }
+        guard p >= 0 else { break; }
+        let probe = ip;
+        if !rep {
+            while p > anchor && p - d > 0 && e.win[p - 1] == e.win[p - 1 - d] {
+                p--;
+                len++;
+            }
+            off2 = off1;
+            off1 = d;
+            // ip1 is inside the match only while the step is under the
+            // shortest match.
+            if step < 4 { e.long[hl1] = (e.base + ip1) as! u32; }
+        }
+        zstd_seq(e, p - anchor, d, len);
+        ip = p + len;
+        anchor = ip;
+        guard e.nseq < ZSTD_SEQ_MAX else { break; }
+        guard ip <= limit else { continue; }
+        let v2 = load64(e.win, probe + 2);
+        e.long[hash_long(v2)] = (e.base + probe + 2) as! u32;
+        e.head[hash_short(v2)] = (e.base + probe + 2) as! u32;
+        e.long[hash_long(load64(e.win, ip - 2))] = (e.base + ip - 2) as! u32;
+        e.head[hash_short(load64(e.win, ip - 1))] = (e.base + ip - 1) as! u32;
+        while ip <= limit && off2 <= ip && load32(e.win, ip - off2) == load32(e.win, ip) {
+            let n = 4 + match_len(e.win, ip - off2 + 4, ip + 4, end - ip - 4);
+            let t = off2;
+            off2 = off1;
+            off1 = t;
+            let v = load64(e.win, ip);
+            e.long[hash_long(v)] = (e.base + ip) as! u32;
+            e.head[hash_short(v)] = (e.base + ip) as! u32;
             zstd_seq(e, 0, off1, n);
             ip += n;
             anchor = ip;

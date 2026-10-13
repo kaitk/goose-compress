@@ -35,8 +35,10 @@ WSIZE = 32768
 ZSTD_BLOCK_MAX = 1 << 17
 # The window zstd.goose declares: its matches reach back fewer bytes than this.
 ZSTD_WINDOW = 1 << 17
-# The first level held to the tighter size limits: the default level.
+# The first level held to the second size limits: the default level, in
+# DEFLATE and in zstd.
 STRONG_LEVEL = 6
+ZSTD_STRONG_LEVEL = 3
 
 
 def text(n):
@@ -145,14 +147,16 @@ def changing(r):
 def inputs():
     """Yields each input's name, bytes, and the most its one-shot output may
     take at level 1 and up, as a share of the input, in DEFLATE and in zstd:
-    a few percent over what level 1 reaches. Where DEFLATE's stronger levels
-    do better, its limit is a pair: the one from level 1, then the one from
-    STRONG_LEVEL, a few percent over what level 6 reaches."""
+    a few percent over what level 1 reaches. Where a format's default level
+    differs, its limit is a pair: the one from level 1, then the one from
+    STRONG_LEVEL in DEFLATE or ZSTD_STRONG_LEVEL in zstd, a few percent over
+    what level 6 or level 3 reaches. zstd's level 3 does worse than its level
+    1 on the JSON, as libzstd's does: it takes short matches in the digits."""
     r = random.Random(3)
     yield "empty", b"", None, None
     yield "one byte", b"a", None, None
-    yield "text", text(100_000), (0.24, 0.19), 0.225
-    yield "json", json_doc(), (0.235, 0.205), 0.19
+    yield "text", text(100_000), (0.24, 0.19), (0.225, 0.205)
+    yield "json", json_doc(), (0.235, 0.205), (0.19, 0.198)
     # Stored where a code would grow it.
     yield "random", r.randbytes(300_000), 1.001, 1.001
     for n in (STORED_MAX - 1, STORED_MAX, STORED_MAX + 1, 2 * STORED_MAX,
@@ -170,7 +174,7 @@ def inputs():
     yield "repeats at 32768", repeats_at(r, WSIZE, 4 * WSIZE), 0.27, 0.26
     # Out of DEFLATE's reach: nothing to match, so stored.
     yield "repeats at 32769", repeats_at(r, WSIZE + 1, 4 * WSIZE), 1.001, 0.26
-    yield "copies within 40 KB", copies(r, 200_000), (0.39, 0.375), 0.43
+    yield "copies within 40 KB", copies(r, 200_000), (0.39, 0.375), (0.43, 0.41)
     yield "a code past 15 bits", deep_code(r), 0.66, 0.67
     # At the edge of zstd's window, and out of its reach.
     r = random.Random(5)
@@ -178,9 +182,9 @@ def inputs():
            1.001, 0.345)
     yield ("repeats at 131072", repeats_at(r, ZSTD_WINDOW, 3 * ZSTD_WINDOW),
            1.001, 1.001)
-    yield "short matches", short_matches(r, 300_000), 0.39, 0.475
+    yield "short matches", short_matches(r, 300_000), 0.39, (0.475, 0.39)
     yield "skewed bytes", skewed(r, 300_000), 0.79, 0.795
-    yield "changing statistics", changing(random.Random(6)), None, 0.645
+    yield "changing statistics", changing(random.Random(6)), None, (0.645, 0.615)
 
 
 def plans(n):
@@ -215,10 +219,10 @@ def run(encode, fmt, level, data, plan, tmp):
     return out, dst, flushes
 
 
-def level_limit(limit, level):
+def level_limit(limit, level, strong=STRONG_LEVEL):
     """The limit inputs() gives for one level, or None."""
     if isinstance(limit, tuple):
-        return limit[1] if level >= STRONG_LEVEL else limit[0]
+        return limit[1] if level >= strong else limit[0]
     return limit
 
 
@@ -436,7 +440,8 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         for name, data, limit, zlimit in inputs():
             for fmt, level in runs:
-                lim = zlimit if fmt == "zstd" else level_limit(limit, level)
+                lim = (level_limit(zlimit, level, ZSTD_STRONG_LEVEL) if fmt == "zstd"
+                       else level_limit(limit, level))
                 for pname, plan in [("one-shot", None)] + list(plans(len(data))):
                     try:
                         check(args.encode, fmt, level, data, plan, tmp,

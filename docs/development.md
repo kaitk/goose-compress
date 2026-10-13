@@ -80,9 +80,10 @@ program that imports both builds with one compiler.
    known values, and the exact bytes of empty, raw, RLE, and compressed blocks: two
    with sequences and the predefined tables, the second across a flush with a repeat
    offset; one of Huffman literals alone; and two across a flush, the first building
-   its literal length and offset tables and the second repeating them. Each was checked
-   with `zstd -d` and `compression.zstd`. After `reset`, a stream must come out as
-   from a new encoder, with no table to repeat.
+   its literal length and offset tables and the second repeating them; and one at
+   level 3 of 5-byte matches that level 1 misses. Each was checked with `zstd -d` and
+   `compression.zstd`. After `reset`, a stream must come out as from a new encoder,
+   with no table to repeat, after streams at levels 3 and 1 too.
 3. `goose build` of `test/encode.goose` into `build/encode`, a command that compresses
    a file at a level, one-shot or by a plan of writes and flushes.
 4. `scripts/roundtrip.py`: `build/encode` on each input in gzip, zlib, and raw DEFLATE,
@@ -105,7 +106,9 @@ program that imports both builds with one compiler.
    writes and flushes. One-shot at level 1 and up, inputs that repeat must compress
    below a limit set for each, a few percent above what level 1 reaches, in DEFLATE
    and in zstd; text, JSON, and the copies within 40 KB have a tighter DEFLATE limit
-   from level 6, a few percent above what level 6 reaches. The script then reads back
+   from level 6, a few percent above what level 6 reaches, and those, short matches,
+   and the changing input a zstd limit of their own from level 3, looser for the JSON,
+   where level 3 does worse than level 1. The script then reads back
    the header of the 17-bit input's block: its literal/length code must reach exactly
    15 bits and be complete. It reads back the changing input's zstd frames too, block
    by block: one-shot, some must build sequence tables; flushed every 1,000 bytes,
@@ -205,7 +208,8 @@ build/bench/bench 6 build/bench/corpus/mozilla 20 & sleep 1; sample bench 4 -fil
   `import math;`. The package's own `log2`, of an `i64`, hides std's in namespace
   `compress`: write `::log2(x)` for the float one.
 - `bench/run.sh` sets `LC_ALL=C`: under a locale with a decimal comma, such as
-  `et_EE`, awk prints `10,2` and the table's numbers break.
+  `et_EE`, awk prints `10,2` and the table's numbers break. Set it in any script that
+  computes ratios too: the shell's `printf "%.4f"` rejects `bc`'s `.3781` there.
 - A rebuilt zlib-ng keeps options from its CMake cache: delete `build/bench/zlib-ng`
   after changing its options in `bench/build.sh`.
 - A constant plus a `u8` is a `u8`: `t[768 + b[4]]` fails with "constant 768 does not

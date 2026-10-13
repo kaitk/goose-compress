@@ -718,6 +718,80 @@ was 6 percent of a 1,000-byte call (`sample`) while it started from each share r
 down; starting from the share rounded to nearest leaves the greedy adjustment fewer
 steps, cut that call by about 0.2 µs, and left Silesia's output the same to the byte.
 
+### zstd level 3: task 004 step 5
+
+2026-10-13, Goose `a6249a4`, `goose build` defaults with Apple clang 21.0.0. Step 4,
+with level 3 matching as libzstd's `ZSTD_dfast` does: a 2^16-entry table of 8-byte
+hashes and a 2^15-entry table of 5-byte ones. Levels 2 and up run it. Measured with
+step 2's commands. Chrome and a virtual machine ran beside the benchmarks, at a load
+average of 3 to 8, so the builds ran in alternating rounds.
+
+Ratio, output over input, on the 12 Silesia files, `bench 1 FILE 1 zstd` and
+`bench 3 FILE 1 zstd`, against `zstd -3 --no-check -c FILE` from the zstd 1.5.7
+command line (Homebrew), with its 2 MB window and with this package's 128 KB one
+(`--zstd=wlog=17`). Level 1's ratios are step 4's to four places.
+
+| File | Level 1 | Level 3 | zstd -3 | zstd -3, 128 KB window |
+|---|---:|---:|---:|---:|
+| dickens | 0.3955 | 0.3781 | 0.3596 | 0.3955 |
+| webster | 0.3201 | 0.3045 | 0.2920 | 0.3187 |
+| xml | 0.1417 | 0.1341 | 0.1190 | 0.1411 |
+| nci | 0.0873 | 0.0866 | 0.0845 | 0.0919 |
+| mozilla | 0.3848 | 0.3757 | 0.3569 | 0.3767 |
+| samba | 0.2537 | 0.2459 | 0.2295 | 0.2564 |
+| x-ray | 0.7978 | 0.7407 | 0.7182 | 0.7510 |
+| mr | 0.3680 | 0.3582 | 0.3559 | 0.3637 |
+| ooffice | 0.5543 | 0.5262 | 0.5085 | 0.5287 |
+| osdb | 0.3492 | 0.3481 | 0.3472 | 0.3806 |
+| reymont | 0.3173 | 0.3007 | 0.2924 | 0.3141 |
+| sao | 0.8200 | 0.7808 | 0.7628 | 0.7707 |
+| total | 0.3378 | 0.3251 | 0.3124 | 0.3335 |
+
+Level 3's output is 3.8 percent smaller than level 1's, and 4.1 percent larger than
+`zstd -3`'s. With the same 128 KB window, it's 2.5 percent smaller than libzstd's, and
+larger only on `sao`. On `roundtrip.py`'s JSON, level 3 writes 30,551 bytes against
+level 1's 29,274, as `zstd -3` writes 33,568 against `zstd -1`'s 28,910: both take
+short matches inside its random digits.
+
+One constant changed at a time, level 3's Silesia total: a 2^17-entry long table, as
+libzstd's for inputs past 256 KB, 0.3246 for 256 KB more; a 6-byte short hash 0.3316;
+a 4-byte one 0.3250.
+
+Rate, MB/s, `bench 1 FILE 10 zstd` and `bench 3 FILE 10 zstd`, 5 alternating rounds of
+step 4's build at level 1 and this step's at levels 1 and 3, the median of the rounds'
+medians. Each file's rounds varied by 1.0 to 5.2 percent, and by 8 to 10 percent on
+`x-ray` at level 1.
+
+| File | Step 4, level 1 | Level 1 | Level 3 | Level 3 over level 1 |
+|---|---:|---:|---:|---:|
+| dickens | 126.5 | 127.8 | 108.9 | -14.8% |
+| webster | 159.9 | 159.9 | 135.0 | -15.6% |
+| xml | 335.5 | 334.1 | 307.4 | -8.0% |
+| nci | 436.2 | 428.9 | 420.8 | -1.9% |
+| mozilla | 216.5 | 215.7 | 164.2 | -23.9% |
+| samba | 250.7 | 251.2 | 213.3 | -15.1% |
+| x-ray | 580.1 | 584.3 | 119.5 | -79.5% |
+
+Level 1 is within its rounds' spread of step 4's. Level 3 runs slowest where it finds
+more short matches than level 1: on `x-ray`, which level 1 skips through fast for want
+of 6-byte matches, its output is 7.2 percent smaller. libzstd shows the same: `zstd
+-b1e3 --no-check FILE` (3 seconds a level) gave `x-ray` 1,304 MB/s at level 1 and 207
+at level 3, `dickens` 677 and 264, and `mozilla` 1,105 and 699.
+
+`compress::compress` on the first N bytes of `dickens`, best of 3 runs of 5 averages
+of 20,000,000 / (N + 2,000) calls, µs a call, the median of 3 rounds of the two builds
+alternating, as for step 2, at a load average of 3 to 6:
+
+| Build | 100 bytes | 1,000 bytes | 10,000 bytes |
+|---|---:|---:|---:|
+| Step 4, level 1 | 3.63 | 7.93 | 37.5 |
+| Level 1 | 2.48 | 6.35 | 36.0 |
+| Level 3 | 2.57 | 7.41 | 45.3 |
+
+`reset` no longer clears the hash tables: each stream starts out of their entries'
+reach. Clearing level 3's 384 KB of them made 100 bytes take 6.2 µs at level 3, and
+level 1's 128 KB took about 1.1 µs at step 4.
+
 ## AMD Ryzen 7 5800X3D, Windows
 
 - Desktop on an MSI `MS-7A34` board, AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,

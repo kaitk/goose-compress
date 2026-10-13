@@ -204,6 +204,30 @@ until the task named beside it confirms or replaces it.
   position every 128 bytes without a match. libzstd's 7-byte hash made Silesia's
   output 2.6 percent larger; a 5-byte one gained 1.7 percent, nearly all on `x-ray`,
   and was 2 to 9 percent slower (task 004 step 2, 2026-10-13).
+- **zstd's level 3 is libzstd's `ZSTD_dfast`, with libzstd's parameters for inputs up
+  to 128 KB**: a table of 2^16 stream offsets hashed from 8 bytes, beside level 1's
+  table of 2^15, here hashed from 5. Each position checks the last offset one position
+  on, then the long match, then the short one, which gives way to a longer long match
+  at the next position. Silesia's output went from level 1's 0.3378 of its input to
+  0.3251, against `zstd -3`'s 0.3124 with its 2 MB window and 0.3335 with a 128 KB one
+  (`--zstd=wlog=17`). It's 2 to 24 percent slower than level 1 on six of seven files,
+  and 80 percent slower on `x-ray`, where libzstd's level 3 is 84 percent slower than
+  its level 1. A 2^17-entry long table, libzstd's for larger inputs, made the output
+  0.15 percent smaller for 256 KB more; a 6-byte short hash made it 2.0 percent larger,
+  and a 4-byte one left it the same as 5. The long table adds 262,144 bytes, for a
+  `ZstdEncoder` of 879,875 (task 004 step 5, 2026-10-13,
+  [results](../results-history.md#zstd-level-3-task-004-step-5)).
+- **A zstd `reset` keeps the hash tables.** Each stream's offsets start a window past
+  the last stream's end, so no entry from before is in reach, and a new encoder's start
+  a window past 0, so its empty entries aren't either: a reset stream codes as a new
+  encoder's does. The tables are cleared when offsets would pass 2^31, so the two agree
+  for a stream's first 2 GB, as far as the tables' 32-bit offsets go without wrapping
+  in either. Clearing level 3's 384 KB of tables at every reset made `compress` of 100
+  bytes take 6.2 µs, against 2.6 µs without (task 004 step 5, 2026-10-13).
+- **zstd's levels, 1 to 22, each run the nearest level built**: level 1 the fast
+  matcher, and 2 and up the double-fast, level 3, as libzstd's level 2 does for inputs
+  up to 256 KB. Higher levels wait on a measurement (task 004, 2026-10-12; level 3
+  measured in step 5, 2026-10-13).
 - **Repeat offsets are resolved when a block is coded**, from the offsets a decoder
   holds after the last compressed block. The matcher keeps distances and its own last
   two offsets; a block written raw leaves the decoder's offsets as they were, as RFC
@@ -248,10 +272,6 @@ until the task named beside it confirms or replaces it.
   2026-10-13).
 
 ## Proposed
-
-- **zstd's levels, 1 to 22, each running the nearest level built.** Level 1 is the
-  fast matcher and 3, the default, the double-fast, as libzstd's; others wait on a
-  measurement (task 004, 2026-10-12).
 
 - **DEFLATE in steps that each give valid output** (task 001): stored blocks, then LZ77
   with fixed Huffman tables, then dynamic tables, then speed. Each step keeps the API.
