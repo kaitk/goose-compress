@@ -29,9 +29,9 @@ The package is slower than libdeflate and zlib-ng at every level on both machine
 there, the package proxies to the C libraries instead (requested 2026-10-13). This
 task finds which of the two it is. It tunes for the Ryzen 7 5800X3D under Windows, as
 goose-http does, and doesn't hold back a change for the M1 Pro's sake or for task 003's
-earlier measurements. It covers DEFLATE. zstd (task 004) is 2 to 3 times slower than
-libzstd; the codegen fixes found here are applied to it after DEFLATE, and the proxy
-decision covers both.
+earlier measurements. It covers DEFLATE first. zstd (task 004) is 2 to 3 times slower
+than libzstd; step 5 applies the fixes found here to it, and the proxy decision covers
+both.
 
 ## Where the gap is thought to be
 
@@ -85,7 +85,18 @@ Use SIMD where a measurement shows a gain, not as a goal in itself.
    hand-written assembly reference at levels 0 to 3. Consider Chromium's zlib, which
    Node uses, and zlib-rs. Bun offers zlib and libdeflate through `Bun.gzipSync`'s
    `library` option; its default is unconfirmed.
-5. Decide: keep the Goose encoder, or proxy. A proxy replaces the encoder whole. A C
+5. Apply what DEFLATE taught to zstd, against libzstd and klauspost/compress:
+   - Measure zstd levels 1 and 3 on the Ryzen; it has run only on the M1 Pro.
+   - Profile the package and libzstd, built from source, with the sampler
+     (`CLAUDE.local.md`). On the M1 Pro, the coding after the matcher took 4.3 times
+     libzstd's time a byte on `webster` and the matcher 2.1 times, so the coding comes
+     first.
+   - Carry over the fixes kept for DEFLATE: the hot search inlined, bounds checks and
+     encoder state out of the inner loops, and block writing. The 16-bit chain links
+     don't apply: zstd's levels 1 and 3 keep hash tables and no chains.
+   - Check the tables against the 512 KB L2: 128 KB and 256 KB of `u32`, beside a
+     larger window than DEFLATE's.
+6. Decide: keep the Goose encoders, or proxy. A proxy replaces the encoder whole. A C
    matchfinder inside a Goose package is a binding with extra steps. libdeflate has no
    streaming or sync flush, so `Encoder` would need zlib-ng; one-shot `compress` could
    use libdeflate. A proxy reverses "Pure Goose, not bindings" in
@@ -125,8 +136,11 @@ that zlib-ng's faster level 1 costs a third more output. The results for this ta
 - [ ] Each change measured on its own against the build before it, kept or not, with the
       numbers in `docs/results.md`
 - [ ] `igzip` in `bench/`, or the reason it isn't, recorded
-- [ ] Parity reached at levels 1, 6, and 9 on the Ryzen, or the proxy decision recorded
-      in `docs/architecture/README.md` with the measurements behind it
+- [ ] zstd levels 1 and 3 measured on the Ryzen against libzstd and klauspost/compress,
+      and each fix carried over from DEFLATE measured on its own, kept or not
+- [ ] Parity reached at levels 1, 6, and 9 on the Ryzen, and zstd's gap to libzstd
+      closed or measured, or the proxy decision recorded in
+      `docs/architecture/README.md` with the measurements behind it
 - [ ] Results show output size against libdeflate's, rate against ratio, and per-stream
       memory and peak RSS for all three encoders, as in "How results are shown"
 - [ ] Compiler and stdlib gaps found recorded in `docs/goose-findings.md`
