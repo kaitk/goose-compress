@@ -548,7 +548,7 @@ fn code_seqs(e: ZstdEncoder&, cl: i64[256]&, co: i64[256]&, cm: i64[256]&) -> i6
         }
         s = (s & 0xFFFFFFFFFF) | (v as! u64) << 40;
         let lc = ll_code(lits as i64) as! u8;
-        let oc = log2_zstd(v) as! u8;
+        let oc = offset_code(v) as! u8;
         let mc = ml_code(((s >> 20) & 0xFFFFF) as i64 - 3) as! u8;
         e.llc[i % ZSTD_SEQ_MAX] = lc;
         e.ofc[i % ZSTD_SEQ_MAX] = oc;
@@ -680,6 +680,24 @@ fn log2_zstd(x: i64) -> i64 {
     return if x >= 1 << 16 { 16 + LOG2[(x >> 16) & 255] }
            else if x >= 256 { 8 + LOG2[(x >> 8) & 255] }
            else { LOG2[x & 255] };
+}
+
+// The offset code, log2_zstd of an offset value, which is below 2^18 in a
+// 128 KB window. Both table loads run, so the select can be a conditional
+// move: offset values fall either side of 256 at random, where a branch
+// mispredicts.
+fn offset_code(v: i64) -> i64 {
+    let lo = LOG2[v & 255];
+    let hi = 8 + LOG2_HI[(v >> 8) & 1023];
+    return if v >= 256 { hi } else { lo };
+}
+
+let LOG2_HI = log2_hi_tab();
+
+fn log2_hi_tab() -> u8[1024] {
+    var t: u8[1024] = [0; 1024];
+    for i in 2..1024 { t[i] = t[i >> 1] + 1; }
+    return t;
 }
 
 // The predefined distributions (§3.1.1.3.2.2), where -1 is a probability
