@@ -430,8 +430,10 @@ fn zstd_block(e: ZstdEncoder&, out: u8[>..]&, start: i64, end: i64, last: bool) 
         let lits = e.lits[..nl];
         var l = ZstdLits { .. };
         plan_literals(lits, l);
-        var count: i64[3 * FSE_SYMS] = [0; 3 * FSE_SYMS];
-        let r0, r1, r2 = code_seqs(e, count);
+        var cl: i64[256] = [0; 256];
+        var co: i64[256] = [0; 256];
+        var cm: i64[256] = [0; 256];
+        let r0, r1, r2 = code_seqs(e, cl, co, cm);
         let n = e.nseq;
         let sh = if n == 0 { 1 } else if n < 128 { 2 } else if n < 0x7F00 { 3 } else { 4 };
         var size = l.size + sh;
@@ -445,7 +447,8 @@ fn zstd_block(e: ZstdEncoder&, out: u8[>..]&, start: i64, end: i64, last: bool) 
             let first = [e.llc[n - 1], e.ofc[n - 1], e.mlc[n - 1]];
             var bits = 1;
             for k in 3 {
-                let kc = count[k * FSE_SYMS..(k + 1) * FSE_SYMS];
+                let kc = if k == ZSTD_LL { cl[..FSE_SYMS] } else if k == ZSTD_OF { co[..FSE_SYMS] }
+                         else { cm[..FSE_SYMS] };
                 mode[k] = plan_table(e, k, kc, first[k], desc[k]);
                 slot[k] = 2 * k + (if mode[k] == FSE_REPEAT { e.cur[k] } else { 1 - e.cur[k] });
                 size += desc[k].o;
@@ -515,8 +518,8 @@ fn is_run(data: const u8[:]) -> bool {
 // Replaces each sequence's distance with its offset value, as a decoder
 // tracks the repeat offsets from the last compressed block (§3.1.1.5), and
 // returns the repeat offsets after the block. Sets each sequence's codes, and
-// counts each kind's at count[k * FSE_SYMS].
-fn code_seqs(e: ZstdEncoder&, count: i64[:]) -> i64, i64, i64 {
+// counts them in cl, co, and cm, which a u8 code indexes without a bounds check.
+fn code_seqs(e: ZstdEncoder&, cl: i64[256]&, co: i64[256]&, cm: i64[256]&) -> i64, i64, i64 {
     var r0 = e.rep0;
     var r1 = e.rep1;
     var r2 = e.rep2;
@@ -544,15 +547,15 @@ fn code_seqs(e: ZstdEncoder&, count: i64[:]) -> i64, i64, i64 {
             r0 = d;
         }
         s = (s & 0xFFFFFFFFFF) | (v as! u64) << 40;
-        let lc = ll_code(lits as i64);
-        let oc = log2_zstd(v);
-        let mc = ml_code(((s >> 20) & 0xFFFFF) as i64 - 3);
-        e.llc[i] = lc as! u8;
-        e.ofc[i] = oc as! u8;
-        e.mlc[i] = mc as! u8;
-        count[lc]++;
-        count[FSE_SYMS + oc]++;
-        count[2 * FSE_SYMS + mc]++;
+        let lc = ll_code(lits as i64) as! u8;
+        let oc = log2_zstd(v) as! u8;
+        let mc = ml_code(((s >> 20) & 0xFFFFF) as i64 - 3) as! u8;
+        e.llc[i % ZSTD_SEQ_MAX] = lc;
+        e.ofc[i % ZSTD_SEQ_MAX] = oc;
+        e.mlc[i % ZSTD_SEQ_MAX] = mc;
+        cl[lc]++;
+        co[oc]++;
+        cm[mc]++;
     }
     return r0, r1, r2;
 }
