@@ -1180,3 +1180,37 @@ The profiles came from a sampler that suspends the main thread every 200 µs and
 records its instruction pointer, which needs no elevation on Windows; libdeflate's
 level 6 on `x-ray` spends 87.5 percent in `deflate_compress_lazy` and 11.5 percent in
 `deflate_flush_block`.
+
+### Task 005: level 1 in libdeflate's 2-entry buckets, at `24ac46b`
+
+2026-10-13, task 005, Goose `a6249a4`, same machine, compilers, libraries, and method
+as `9f7a539`'s run above, at level 1 only, at 7 percent CPU load before the run.
+`24ac46b` matches level 1 as libdeflate's `ht_matchfinder`: the 2^16-entry hash table
+as 2^15 buckets of the 2 latest offsets, both tried unless the newer gives 32 bytes.
+`p7` is the same matcher in step 3's hand-fixed C (no bounds checks, state in locals,
+an 8-byte compare), spliced into `6b57c40`'s C; it writes `24ac46b`'s bytes. Sizes
+are against libdeflate's.
+
+| File | `9f7a539` | size | `24ac46b` | size | change | `p7` | libdeflate | zlib-ng | `24ac46b` / libdeflate |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 191.2 | +3.0% | 161.6 | +0.0% | -15.5% | 186.6 | 263.5 | 284.7 | 0.61 |
+| webster | 214.8 | +5.0% | 181.5 | +0.1% | -15.5% | 210.0 | 292.4 | 341.9 | 0.62 |
+| xml | 323.6 | +20.3% | 286.8 | -0.0% | -11.4% | 352.9 | 504.3 | 677.1 | 0.57 |
+| nci | 403.5 | +7.6% | 332.7 | +0.1% | -17.5% | 419.9 | 655.6 | 886.9 | 0.51 |
+| mozilla | 216.3 | +1.5% | 172.5 | -0.1% | -20.2% | 194.1 | 275.1 | 317.1 | 0.63 |
+| samba | 270.5 | +3.2% | 220.7 | -0.0% | -18.4% | 258.5 | 371.5 | 446.0 | 0.59 |
+| x-ray | 142.9 | +0.6% | 103.1 | +0.2% | -27.9% | 110.2 | 164.5 | 158.4 | 0.63 |
+
+Kept (2026-10-13), for the output size: level 1 now writes libdeflate's sizes to
+within 0.2 percent, where it wrote up to 20.3 percent more, at 11 to 28 percent of its
+rate. `p7` runs within 2.4 percent of `9f7a539`, or faster, on four files, so most of
+the loss is the Goose build's, not the matcher's. On `mozilla` and `x-ray` `p7` loses
+10 and 23 percent too.
+
+A sampling profile of `p7` on `dickens` puts 15 percent of its samples on the bucket
+load in the loop that inserts a match's positions, which must now read a bucket to
+shift it; libdeflate's own loop spends 15.5 percent on the same load. libdeflate's
+16-bit positions in a 128 KB table, rebased every 32 KB, made `p7` 0 to 7 percent
+slower in a quick check (one `bench 1 FILE 3` each). The rest of `p7`'s gap to
+libdeflate is spread: its matcher takes 42.6 ms of a `dickens` run where libdeflate's
+takes 34, and `end_block` 11.2 ms against `deflate_flush_block`'s 7.2.

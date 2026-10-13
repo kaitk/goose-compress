@@ -131,8 +131,8 @@ until the task named beside it confirms or replaces it.
   bytes, and the longer match taken greedily, with no chains. Against one probe a
   position it made level 1's output 0.1 to 20 percent smaller, to within 0.2 percent
   of libdeflate's, and 11 to 28 percent slower on the Ryzen; the same code in
-  hand-fixed C lost 2 to 4 percent on four files of seven, so the loss is taken as
-  codegen to fix (task 005, 2026-10-13). Levels 2 to 9 search the hash chains with libdeflate's
+  hand-fixed C ran within 2.4 percent of the old rate, or faster, on four files of
+  seven, so the loss is taken as codegen to fix (task 005, 2026-10-13). Levels 2 to 9 search the hash chains with libdeflate's
   depth (the most candidates compared) and nice length (the length that ends a
   search). Levels 5 to 7 match lazily: after a match, a search one position on
   (at half the depth) may find a better one, and the encoder emits a literal and

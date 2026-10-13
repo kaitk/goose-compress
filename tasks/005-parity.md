@@ -8,14 +8,18 @@ libdeflate's rate, so step 3 pointed to the structure
 `9f7a539` ports `hc_matchfinder`'s chain search: level 9 now runs at 0.82 to 1.09 of
 libdeflate's rate, level 6 at 0.73 to 0.84
 ([results](../docs/results-history.md#task-005-step-3-libdeflates-chain-search-at-9f7a539)).
+`24ac46b` ports level 1's `ht_matchfinder`: output within 0.2 percent of libdeflate's,
+at 0.51 to 0.63 of its rate, 11 to 28 percent slower than before
+([results](../docs/results-history.md#task-005-level-1-in-libdeflates-2-entry-buckets-at-24ac46b)).
 Next:
 
-- Level 1: port `deflate_compress_fastest` and `ht_matchfinder` (2-entry buckets, nice
-  length 32), which also closes most of level 1's 20 percent larger output on `xml`.
-- Level 6: the C prototype with the same search runs 10 to 14 percent faster than the
-  Goose build, from bounds checks and state kept through `z`; and libdeflate's search
-  costs less per position on `x-ray` with the same work. The `build/task005/port/`
-  prototypes and sampler (`CLAUDE.local.md`) are the starting point.
+- Codegen, for levels 1 and 6: the hand-fixed C of the same matchers runs 10 to 14
+  percent faster than the Goose build at level 6 and up to 23 percent at level 1, from
+  bounds checks and state kept through `z`. Then `end_block`, 11.2 ms of a level 1
+  `dickens` run against libdeflate's 7.2. The `build/task005/port/` prototypes and
+  sampler (`CLAUDE.local.md`) are the starting point.
+- libdeflate's search costs less per position on `x-ray` with the same work, at both
+  levels.
 - libdeflate's 3-byte matches and adaptive minimum length bring output within 1
   percent of its own, but cost up to 30 percent of the rate in the current table
   layout; revisit after the above.

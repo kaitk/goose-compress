@@ -196,3 +196,12 @@ file, with the C prototypes behind the change, in
 Level 9 runs at 0.93 to 1.09 of libdeflate's rate on six files, faster on `mozilla`
 and `samba`, and 0.82 on `x-ray`.
 
+### Level 1 at `24ac46b`
+
+2026-10-13, task 005: level 1 in libdeflate's 2-entry hash buckets, measured as at
+`9f7a539`. Output is within 0.2 percent of libdeflate's size on all seven files, where
+`9f7a539` wrote 0.6 to 20.3 percent more, at 103 to 333 MB/s, 11 to 28 percent slower
+than `9f7a539` and 0.51 to 0.63 of libdeflate's rate. The same matcher in hand-fixed C
+loses at most 2.4 percent on four files, so the loss is taken as codegen to win back
+([history](results-history.md#task-005-level-1-in-libdeflates-2-entry-buckets-at-24ac46b)).
+
