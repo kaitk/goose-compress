@@ -197,3 +197,43 @@ that drops them, for measurement, as `GS_DEBUG` adds overflow checks.
 
 Workaround: `goose build -v --dry-run` prints the C file and the compile command; edit
 a copy of the file and compile it with that command.
+
+## Bounds-check elimination doesn't combine facts about a difference
+
+Found on `a6249a4`, task 005. Status: open
+
+The analysis (spec §10.5) drops a check when a guard bounds the index itself, and when
+the index is reduced with `%`. It keeps the check on `s[p - d]` after a guard that
+proves `0 <= p - d < s.len`, and on a slice's constant indexes when the slice was taken
+at a difference. Every window read in an LZ77 matcher is at a position minus a
+distance, so none of them lose their checks. Expected: `1 <= d <= p < s.len` proves
+`s[p - d]` in range, and `s[i..i + 4]` proves `c[0]` to `c[3]`, as it does when `i` is
+a parameter. With every call inlined into `main`, the checks marked `kept` stay:
+
+    fn a(s: const u8[:], i: i64) -> u8 {
+        guard i >= 0 && i < s.len else { return 0; }
+        return s[i];                                  // dropped
+    }
+    fn b(s: const u8[:], p: i64, d: i64) -> u8 {
+        guard p < s.len && d >= 1 && d <= p else { return 0; }
+        return s[p - d];                              // kept
+    }
+    fn c(s: const u8[:], p: i64, d: i64) -> u8 {
+        guard p < s.len else { return 0; }
+        let r = min(32768, p);
+        assert(r <= p);                               // kept, as a check of its own
+        guard d >= 1 && d <= r else { return 0; }
+        return s[p - d];                              // kept
+    }
+    fn f(s: const u8[:], p: i64, d: i64) -> u8 {
+        guard p + 4 <= s.len && d >= 1 && d <= p else { return 0; }
+        let w = s[p - d..p - d + 4];                  // kept
+        return w[0] ^ w[3];                           // both kept
+    }
+    let T: i64[64] = [0; 64];
+    fn e(x: u64) -> i64 { return T[x >> 58]; }        // kept
+    fn e2(x: u64) -> i64 { return T[(x >> 58) % 64]; } // dropped
+
+Workaround: index tables with `% n`, as `match_len`'s de Bruijn table does. The window
+reads keep their checks: restating the distance test as `d >= 1 && d <= reach`, with
+`reach <= p` asserted and the window sliced once per search, dropped none of them.

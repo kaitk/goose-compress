@@ -90,11 +90,15 @@ until the task named beside it confirms or replaces it.
 - **A search compares a candidate's 4 hashed bytes, and once it has a match, the 4
   bytes ending at the best length, before extending it,** as libdeflate's does. Until
   the first match, it compares only the 4 hashed bytes. Most candidates fail there.
-  At level 1, comparing the 4 bytes at once made the encoder 16 to 27 percent faster.
-  Extending 8 bytes at a time was no faster at any level, because matches are short,
-  and std's `ctz` is a loop
-  ([findings](../goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)) (task 001 step
-  4, 2026-10-12).
+  At level 1, comparing the 4 bytes at once made the encoder 16 to 27 percent faster
+  (task 001 step 4, 2026-10-12).
+- **A match is extended 8 bytes at a time, after one byte,** with the first differing
+  byte found by a de Bruijn multiply and a 64-entry table, because std's `ctz` is a
+  loop ([findings](../goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)).
+  `match_len` is an `inline fn`: as a call it lost more than the compare gained, 5 to 7
+  percent at level 6 on `x-ray`. Against a byte at a time it made every level 0.8 to
+  9.0 percent faster on the Ryzen, most on `nci` (task 005, 2026-10-13). With `ctz`
+  in its place it was 4 to 26 percent slower (task 001 step 4, task 005 step 2).
 - **Length and distance codes, and a distance's logarithm for lazy matching, come from
   tables built once,** not from std's `clz`. On the M1 Pro the tables were within the
   noise of `clz`, which Apple clang makes one instruction; on the Ryzen, where clang

@@ -410,14 +410,38 @@ fn load32(s: const u8[:], i: i64) -> u32 {
     return c[0] | (c[1] as u32) << 8 | (c[2] as u32) << 16 | (c[3] as u32) << 24;
 }
 
-// Slicing both runs first checks their bounds once, not at each byte.
-fn match_len(win: const u8[:], a: i64, b: i64, most: i64) -> i64 {
+// Slicing both runs first checks their bounds once, not at each byte. It
+// compares 8 bytes at a time, and finds the first that differs by a de Bruijn
+// multiply: std's ctz is a loop on x86-64. Inlined: as a call it costs the
+// matchers more than the 8-byte compare gains.
+inline fn match_len(win: const u8[:], a: i64, b: i64, most: i64) -> i64 {
     let x = win[a..a + most];
     let y = win[b..b + most];
     assert(x.len == y.len);
-    var n = 0;
-    while n < x.len && x[n] == y[n] { n++; }
-    return n;
+    // Many matches end at the first byte, on `x-ray` most: one compare before
+    // the 8-byte loop saves them the multiply.
+    guard x.len > 0 && x[0] == y[0] else { return 0; }
+    var n = 1;
+    while n + 8 <= x.len {
+        let d = load64(x, n) ^ load64(y, n);
+        // `% 64` lets the compiler drop the table's bounds check.
+        if d != 0 { return n + (CTZ64[(((d & (0 - d)) * 0x03F79D71B4CB0A89) >> 58) % 64] >> 3); }
+        n += 8;
+    }
+    for i in n..x.len {
+        if x[i] != y[i] { return i; }
+    }
+    return x.len;
+}
+
+// The index of a u64's lowest set bit, by the top 6 bits of that bit times the
+// de Bruijn constant in match_len.
+let CTZ64 = ctz64_tab();
+
+fn ctz64_tab() -> i64[64] {
+    var t: i64[64] = [0; 64];
+    for k in 64 { t[((1 as u64 << k) * 0x03F79D71B4CB0A89) >> 58] = k; }
+    return t;
 }
 
 // Writes the open block in whichever of the three forms takes the fewest bits:
