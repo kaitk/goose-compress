@@ -6,9 +6,9 @@ POSIX shell, Python 3, and `gzip`, and should run unchanged on Linux.
 
 ## Toolchain
 
-| Tool | macOS (2026-10-12) | Windows (2026-10-12) | For |
+| Tool | macOS (2026-10-13) | Windows (2026-10-12) | For |
 |---|---|---|---|
-| Goose compiler | `c38dc0f`, the pin in `README.md` | `c38dc0f` | everything |
+| Goose compiler | `a6249a4`, the pin in `README.md` | `c38dc0f` | everything |
 | OS | macOS 26.3.1, Apple M1 Pro | Windows 11 Pro 10.0.26200, Ryzen 7 5800X3D | |
 | C compiler | Apple clang 21.0.0 (`clang-2100.0.123.102`) | clang 22.1.3 from Visual Studio Build Tools 2026 (18): `clang-cl` for `goose build`, `clang` for `bench/` | `goose build`, `bench/` |
 | CMake | 4.4.4 (Homebrew) | 4.3.1-msvc1 and Ninja 1.13.2, from the Build Tools | building the Goose compiler, libdeflate, and zlib-ng |
@@ -24,7 +24,7 @@ Leave it on the pinned commit and don't edit it (`AGENTS.md`).
 
 ```sh
 git clone -o upstream https://github.com/aardappel/goose.git ../goose
-git -C ../goose checkout c38dc0f
+git -C ../goose checkout a6249a4
 cmake -S ../goose -B ../goose/build-macos -DCMAKE_BUILD_TYPE=Release
 cmake --build ../goose/build-macos -j
 export GOOSE=$PWD/../goose/build-macos/goose

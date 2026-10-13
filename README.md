@@ -172,7 +172,7 @@ tasks/           task tracking (tasks/README.md)
 
 | What | Pin | Why |
 |---|---|---|
-| Goose compiler | `aardappel/goose` `c38dc0f` (`master`, 2026-10-12) | The language and stdlib change often |
+| Goose compiler | `aardappel/goose` `a6249a4` (`master`, 2026-10-12) | The language and stdlib change often |
 
 Move the pin in its own commit, with the tests and results that still hold
 ([development.md](docs/development.md#move-the-pin)).
