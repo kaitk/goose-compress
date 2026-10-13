@@ -9,7 +9,7 @@ should run unchanged on Linux. The zstd benchmark has run on macOS only (2026-10
 
 | Tool | macOS (2026-10-13) | Windows (2026-10-13) | For |
 |---|---|---|---|
-| Goose compiler | `a6249a4`, the pin in `README.md` | `a6249a4` | everything |
+| Goose compiler | `a6249a4`, not yet run at the pin in `README.md`, `0bdbd18` | `0bdbd18`, the pin | everything |
 | OS | macOS 26.3.1, Apple M1 Pro | Windows 11 Pro 10.0.26200, Ryzen 7 5800X3D | |
 | C compiler | Apple clang 21.0.0 (`clang-2100.0.123.102`) | clang 22.1.3 from Visual Studio Build Tools 2026 (18): `clang-cl` for `goose build`, `clang` for `bench/` | `goose build`, `bench/` |
 | CMake | 4.4.4 (Homebrew) | 4.3.1-msvc1 and Ninja 1.13.2, from the Build Tools | building the Goose compiler, libdeflate, zlib-ng, and libzstd |
@@ -27,7 +27,7 @@ Leave it on the pinned commit and don't edit it (`AGENTS.md`).
 
 ```sh
 git clone -o upstream https://github.com/aardappel/goose.git ../goose
-git -C ../goose checkout a6249a4
+git -C ../goose checkout 0bdbd18
 cmake -S ../goose -B ../goose/build-macos -DCMAKE_BUILD_TYPE=Release
 cmake --build ../goose/build-macos -j
 export GOOSE=$PWD/../goose/build-macos/goose

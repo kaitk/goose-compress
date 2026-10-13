@@ -285,3 +285,15 @@ zstd` (`build/task005/ab.sh`), the median of the rounds' medians, per file in
 | `3df4fe4`: hash tables indexed `% n`, 7 bounds checks dropped | -0.8% to +0.5% | -0.9% to +0.4% | yes, for the checks |
 | `b3f480f`: sequences written once, behind a bound on their bits | +2.8% to +5.0%, `x-ray` -1.6% | +2.5% to +4.9% | yes |
 | `b396581`: literals copied into one buffer as each sequence is stored | +18.8% to +27.1%, `x-ray` -0.4% | +5.9% to +20.7% | yes, at 131,072 more bytes |
+| `be26d4e`: sequence codes counted in `u8`-indexed tables, 7 bounds checks dropped | -1.1% to +0.8%, `x-ray` +3.8% | -0.9% to +0.2% | yes, for the checks |
+| `64f7bc5`: offset codes by a select between two table loads, not branches | +0.6% to +2.2%, `x-ray` -2.3% | +0.6% to +3.3% | yes |
+
+`x-ray` at level 1 moves 2 to 4 percent either way between builds, in its literals'
+Huffman coding, which none of these changes touch.
+
+### Goose `0bdbd18`
+
+2026-10-13: the pin moved from `a6249a4` to `0bdbd18`. The package at `64f7bc5`, built
+by each compiler, writes the same output, and in 3 alternating rounds of `bench LEVEL
+FILE 5` every cell is within 1.9 percent: gzip levels 1, 6, and 9 -1.2 to +1.2
+percent, zstd levels 1 and 3 -1.4 to +1.9. The results above stand for `0bdbd18`.

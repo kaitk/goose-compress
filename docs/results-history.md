@@ -1352,3 +1352,41 @@ change against the build before it, with the same output, in 3 alternating round
   sequence is stored, as libzstd's `ZSTD_storeSeq` does. Counting and coding the
   literals then read four flat segments, not runs found by walking the sequences. The
   encoder grows by 131,080 bytes, to 1,010,955.
+
+### Task 005: zstd's sequence codes, at `64f7bc5`
+
+2026-10-13, measured as at `b396581`, each against the build before it. A profile at
+`b396581` on `webster` at level 1 (218.9 MB/s) gives the matcher and its loads about
+64 percent of the samples, `code_seqs` 13, the FSE steps and `put_seqs` 14, and the
+literals 4, down from 23. On `x-ray` at level 1, Huffman coding the literals is 48
+percent and counting them 22.
+
+| File | Level | Base MB/s | `be26d4e` | `64f7bc5` |
+|---|---:|---:|---:|---:|
+| dickens | 1 | 202.2 | +0.8% | +2.2% |
+| webster | 1 | 246.1 | -0.4% | +1.8% |
+| xml | 1 | 514.3 | -1.1% | +1.2% |
+| nci | 1 | 693.3 | +0.5% | +0.7% |
+| mozilla | 1 | 309.9 | -0.3% | +0.6% |
+| samba | 1 | 376.1 | +0.1% | +2.2% |
+| x-ray | 1 | 649.6 | +3.8% | -2.3% |
+| dickens | 3 | 160.3 | -0.9% | +2.1% |
+| webster | 3 | 193.6 | -0.8% | +2.4% |
+| xml | 3 | 448.4 | -0.3% | +3.3% |
+| nci | 3 | 631.5 | -0.0% | +2.4% |
+| mozilla | 3 | 223.8 | -0.8% | +0.6% |
+| samba | 3 | 305.7 | +0.2% | +2.0% |
+| x-ray | 3 | 145.1 | +0.0% | +0.9% |
+
+- `be26d4e` counts the codes in three `i64[256]` tables indexed by the `u8` codes, and
+  indexes the code arrays `% ZSTD_SEQ_MAX`, which drops 7 of `code_seqs`' 9 bounds
+  checks. Within noise: the hot lines are the repeat-offset compares and the offset
+  code's branches.
+- `64f7bc5` loads both of the offset code's candidates, `LOG2[v & 255]` and
+  `8 + LOG2_HI[v >> 8]`, and selects one, where `log2_zstd` branched on `v >= 256`.
+
+Tried after `64f7bc5`, not yet kept: `load64` as one 8-byte slice, not two `load32`s.
+zstd gained 2.6 to 6.6 percent in every cell, but gzip lost 5.9 percent on `x-ray` at
+level 6 and 6.3 at level 9, in two runs. With `match_len` kept on two `load32`s, gzip
+was within noise and zstd kept a third of the gain, so most of both comes from
+`match_len`'s 8-byte load, which the two formats share.

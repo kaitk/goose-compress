@@ -29,9 +29,18 @@ matcher took 3.8 times libzstd's time a byte on `webster`
 the coding, `b396581` the largest (literals copied into one buffer as each sequence is
 stored), leave libzstd 1.45 to 1.74 times faster at level 1 and 1.22 to 1.37 at level
 3, with klauspost about even
-([results](../docs/results.md#zstd-levels-1-and-3-at-b396581)). Left for zstd: a new
-profile, `code_seqs`, `inline fn` for the matchers, and the tables against the 512 KB
-L2.
+([results](../docs/results.md#zstd-levels-1-and-3-at-b396581)). `be26d4e` and
+`64f7bc5` took 0 to 3 percent more out of `code_seqs`. The pin moved to `0bdbd18`,
+whose std `ctz` and `clz` are instructions. Left for zstd:
+
+- `load64` as one 8-byte slice: +2.6 to +6.6 percent for zstd, but -6 percent for gzip
+  on `x-ray` at levels 6 and 9, through the `match_len` both share
+  ([history](../docs/results-history.md#task-005-zstds-sequence-codes-at-64f7bc5)).
+  Try std's `ctz` in `match_len` in place of the de Bruijn table first.
+- The FSE steps and `put_seqs`, 14 percent at level 1 on `webster`; the literals'
+  Huffman coding on `x-ray`, about 1.8 times libzstd's time a byte.
+- The tables against the 512 KB L2: libzstd's level 1 hash table is 32 KB, the
+  package's 128 KB.
 
 Left for DEFLATE, after zstd:
 

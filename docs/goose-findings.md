@@ -109,7 +109,11 @@ fields in place (task 003). `compress` does so with an encoder it keeps.
 
 ## `clz`, `ctz`, and `popcount` loop over the bits
 
-Found on `5c83a5a`, task 001; `clz` on x86-64 on `c38dc0f`, task 003. Status: open
+Found on `5c83a5a`, task 001; `clz` on x86-64 on `c38dc0f`, task 003. Status: fixed in
+`d687028`, checked on `0bdbd18` (2026-10-13): std's three are now runtime functions over
+the C compiler's builtins, and the program below takes 0.12 s on the Ryzen under `goose
+build`. The package's tables and de Bruijn multiply in their place are still to be
+measured against them.
 
 std's `clz`, `ctz`, and `popcount` are Goose loops, one iteration a bit (one a set
 bit for `popcount`). Apple clang 21 turns `clz`'s loop into the `clz` instruction,
