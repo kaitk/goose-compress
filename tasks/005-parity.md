@@ -2,11 +2,23 @@
 
 Status: in-progress
 
-Steps 1 to 3 are done (2026-10-13). The hand-fixed C reaches 0.63 to 0.91 of
-libdeflate's rate, so step 3 points to the structure
+Steps 1 to 3 are done (2026-10-13). The hand-fixed C reached 0.63 to 0.91 of
+libdeflate's rate, so step 3 pointed to the structure
 ([results](../docs/results-history.md#task-005-steps-2-and-3-simd-fn-and-the-codegen-ceiling)).
-Next: port libdeflate's `hc_matchfinder` for levels 6 and 9, then its level 1 loop,
-with the state in locals and the checks hoisted as in the hand-fixed C.
+`9f7a539` ports `hc_matchfinder`'s chain search: level 9 now runs at 0.82 to 1.09 of
+libdeflate's rate, level 6 at 0.73 to 0.84
+([results](../docs/results-history.md#task-005-step-3-libdeflates-chain-search-at-9f7a539)).
+Next:
+
+- Level 1: port `deflate_compress_fastest` and `ht_matchfinder` (2-entry buckets, nice
+  length 32), which also closes most of level 1's 20 percent larger output on `xml`.
+- Level 6: the C prototype with the same search runs 10 to 14 percent faster than the
+  Goose build, from bounds checks and state kept through `z`; and libdeflate's search
+  costs less per position on `x-ray` with the same work. The `build/task005/port/`
+  prototypes and sampler (`CLAUDE.local.md`) are the starting point.
+- libdeflate's 3-byte matches and adaptive minimum length bring output within 1
+  percent of its own, but cost up to 30 percent of the rate in the current table
+  layout; revisit after the above.
 
 The package is slower than libdeflate and zlib-ng at every level on both machines
 (`docs/results.md`). Its rate should at worst match theirs. If the Goose encoder can't get

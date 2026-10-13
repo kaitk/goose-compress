@@ -1102,3 +1102,81 @@ its own; it prefetches the next position's buckets; its minimum match length ada
 to each block's literals, and it rejects 3-byte matches past 8 KB. Its level 1 is
 another loop entirely (`deflate_compress_fastest` and `ht_matchfinder`, nice length
 32).
+
+### Task 005 step 3: libdeflate's chain search, at `9f7a539`
+
+2026-10-13, task 005, Goose `a6249a4`, same machine, compilers, and libraries as step
+2. `9f7a539` ports three things from libdeflate's `hc_matchfinder`: a chain link is
+the low 16 bits of the previous offset, so a step is a load and a mask; a candidate
+must match the 4 bytes ending at the best length, and before the first match only the
+4 hashed bytes; and `search` is an `inline fn`. It writes the same bytes as `6b57c40`
+on all 21 cells. No other benchmark or build ran, at about 2 percent CPU load before
+the run. Each build ran as `bench LEVEL FILE 5` (libdeflate and zlib-ng through
+`ref`), gzip, one-shot, in 3 alternating rounds on the 7 Silesia files; a cell is the
+median of the 3 rounds' medians, in MB/s. `6b57c40` is a `goose build` of that commit.
+
+| Level | File | `6b57c40` | `9f7a539` | change | libdeflate | zlib-ng | `9f7a539` / libdeflate |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 1 | dickens | 186.4 | 183.2 | -1.7% | 254.9 | 285.5 | 0.72 |
+| | webster | 209.7 | 212.8 | +1.5% | 292.7 | 339.6 | 0.73 |
+| | xml | 313.1 | 324.1 | +3.5% | 503.6 | 677.3 | 0.64 |
+| | nci | 379.3 | 396.1 | +4.4% | 651.2 | 883.0 | 0.61 |
+| | mozilla | 210.2 | 210.1 | -0.0% | 276.1 | 318.2 | 0.76 |
+| | samba | 258.4 | 269.7 | +4.4% | 370.3 | 441.0 | 0.73 |
+| | x-ray | 139.2 | 142.8 | +2.6% | 162.5 | 157.6 | 0.88 |
+| 6 | dickens | 50.0 | 61.8 | +23.6% | 73.5 | 67.4 | 0.84 |
+| | webster | 69.1 | 84.1 | +21.7% | 104.2 | 84.6 | 0.81 |
+| | xml | 123.2 | 151.4 | +22.9% | 189.0 | 165.9 | 0.80 |
+| | nci | 130.5 | 183.0 | +40.2% | 236.6 | 214.1 | 0.77 |
+| | mozilla | 74.9 | 97.5 | +30.2% | 120.1 | 93.4 | 0.81 |
+| | samba | 90.3 | 113.2 | +25.4% | 136.1 | 119.4 | 0.83 |
+| | x-ray | 70.2 | 88.4 | +25.9% | 121.2 | 74.1 | 0.73 |
+| 9 | dickens | 22.9 | 30.8 | +34.5% | 31.6 | 27.7 | 0.97 |
+| | webster | 27.1 | 37.0 | +36.5% | 37.8 | 43.3 | 0.98 |
+| | xml | 41.1 | 61.5 | +49.6% | 62.8 | 80.5 | 0.98 |
+| | nci | 30.0 | 57.7 | +92.3% | 62.1 | 71.5 | 0.93 |
+| | mozilla | 19.1 | 31.3 | +63.9% | 30.8 | 27.7 | 1.02 |
+| | samba | 30.8 | 49.9 | +62.0% | 45.9 | 51.1 | 1.09 |
+| | x-ray | 67.6 | 84.6 | +25.1% | 102.8 | 43.3 | 0.82 |
+
+Level 6 is 22 to 40 percent faster and level 9 25 to 92 percent. Level 9 reaches 0.93
+to 1.09 of libdeflate's rate on six files, faster on `mozilla` and `samba`, and 0.82
+on `x-ray`; level 6 reaches 0.73 to 0.84. Level 1's code didn't change; its -1.7 to
++4.4 percent is noise between builds. Output is 0.1 to 4.5 percent larger than
+libdeflate's at levels 6 and 9, as at `6b57c40`.
+
+#### The C prototypes behind it
+
+Before the port, each idea was tried in the hand-fixed C of step 3 (`c-hf`, built the
+same way), and libdeflate v1.26 was built from source with clang 22.1.3 at `-O2` to
+profile and count it. Rates in this subsection are quick checks, not the run above:
+one `bench LEVEL FILE 3` invocation each, the median of 3 runs, at about 2 percent CPU
+load, so they show direction only.
+
+- The chain step dominated. `c-hf`'s step adds the slot's distance, subtracts it from
+  the position, and masks it before the next load; with offset links (P2) a step is a
+  load and a mask, and `dickens` at level 9 went from 24.0 to 31.6 MB/s.
+- libdeflate's candidate test and first-match loop alone (P1) wrote the same bytes and
+  added 4 to 9 percent at levels 6 and 9.
+- `search` wasn't inlined at its three calls, so the encoder state the matcher keeps
+  in a local struct went through memory. Forcing it inline took P2 on `x-ray` level 6
+  from 82.8 to 100.8 MB/s.
+- libdeflate's `hash3` table for 3-byte matches and its minimum match length, chosen
+  from the block's literals (P4), brought output to within 0.1 to 0.9 percent of
+  libdeflate's, but cost 3 to 30 percent of the rate, most on `x-ray` (level 6, 100.8
+  to 77.4 MB/s). With them, the prototype does libdeflate's work exactly: on `x-ray` at level
+  6 both make 5,915,406 searches and about 3,394,000 chain steps. A sampling profile
+  puts the prototype's extra time in cache misses on its tables: a 256 KB `u32` head
+  table, a 128 KB `hash3` table, and the 64 KB chains, past the 512 KB L2 with the
+  window and symbols; libdeflate's three tables take 256 KB.
+- libdeflate's layout, 16-bit positions in all three tables rebased every 32 KB (P5),
+  was 5 to 10 percent faster than P4 at level 6 on `x-ray` and 8 to 15 percent slower
+  at level 9 on `dickens` and `mozilla`. A 16-bit head table without rebasing (P3) let
+  stale entries into reach and was up to 31 percent slower.
+- A prefetch of the next position's buckets measured the same as the plain load the
+  package already does.
+
+The profiles came from a sampler that suspends the main thread every 200 µs and
+records its instruction pointer, which needs no elevation on Windows; libdeflate's
+level 6 on `x-ray` spends 87.5 percent in `deflate_compress_lazy` and 11.5 percent in
+`deflate_flush_block`.

@@ -179,3 +179,20 @@ both libraries: CRC-32 at 2.6 to 2.8 GB/s against their carryless multiply.
 Task 005's steps 2 and 3, `simd fn` and the hand-fixed C against libdeflate, are in
 [results-history.md](results-history.md#task-005-steps-2-and-3-simd-fn-and-the-codegen-ceiling).
 
+### Levels 1, 6, and 9 at `9f7a539`
+
+2026-10-13, task 005 step 3: libdeflate's chain search ported to Goose. It writes the
+same bytes as `6b57c40`. Measured in 3 alternating rounds of `bench LEVEL FILE 5`
+against `6b57c40` and the libraries; MB/s is the median of the rounds' medians. Per
+file, with the C prototypes behind the change, in
+[results-history.md](results-history.md#task-005-step-3-libdeflates-chain-search-at-9f7a539).
+
+| Level | goose MB/s | libdeflate MB/s | zlib-ng MB/s | goose / libdeflate | Against `6b57c40` |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 143–396 | 163–651 | 158–883 | 0.61–0.88 | -1.7% to +4.4% (unchanged code) |
+| 6 | 62–183 | 74–237 | 67–214 | 0.73–0.84 | +21.7% to +40.2% |
+| 9 | 31–85 | 31–103 | 28–81 | 0.82–1.09 | +25.1% to +92.3% |
+
+Level 9 runs at 0.93 to 1.09 of libdeflate's rate on six files, faster on `mozilla`
+and `samba`, and 0.82 on `x-ray`.
+

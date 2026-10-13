@@ -18,7 +18,7 @@ and each block's literals and sequences are coded with tables chosen for it.
 
 | | Encoding | Notes |
 |---|---|---|
-| 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.05 to 1.7 times slower than zlib-ng and libdeflate at levels 1 and 6 on an M1 Pro, 1.2 to 2.3 times on a Ryzen ([results](docs/results.md)). |
+| 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.05 to 1.7 times slower than zlib-ng and libdeflate at levels 1 and 6 on an M1 Pro. On a Ryzen, 0.61 to 0.88 of libdeflate's rate at level 1, 0.73 to 0.84 at level 6, and 0.82 to 1.09 at level 9 ([results](docs/results.md)); speed is still being tuned. |
 | 🟢 | zlib (HTTP's `deflate`) | The same DEFLATE stream as gzip, with the zlib header and Adler-32. |
 | 🟢 | Raw DEFLATE | The same stream with no wrapper. |
 | 🟢 | zstd | Levels 1 and 3, libzstd's fast and double-fast matchers, into compressed blocks with Huffman literals and FSE tables chosen per block; levels 2 and up run level 3. Silesia comes to 0.3378 of its size at level 1 and 0.3251 at level 3, against libzstd's 0.3455 and 0.3121. 2.0 to 3.2 times slower than libzstd and 1.6 to 1.9 times slower than klauspost/compress on six files of seven, on an M1 Pro ([results](docs/results.md#zstd-levels-1-and-3-at-237de3a)); speed is still being improved. |
@@ -131,19 +131,21 @@ mode, and klauspost/compress in Go. Each machine's full tables, setup, and metho
 [docs/results.md](docs/results.md), and each change's measurements in
 [results-history.md](docs/results-history.md).
 
-gzip on a Ryzen 7 5800X3D under Windows 11, at `6b57c40`, over seven Silesia files[^1]:
+gzip on a Ryzen 7 5800X3D under Windows 11, at `9f7a539`, over seven Silesia files[^1]:
 
-| Level | goose MB/s | libdeflate MB/s | zlib-ng MB/s | goose vs libdeflate | goose output vs libdeflate's |
+| Level | goose MB/s | libdeflate MB/s | zlib-ng MB/s | goose / libdeflate rate | goose output vs libdeflate's |
 |---:|---:|---:|---:|---:|---:|
-| 0 | 2,639–2,833 | 12,859–19,144 | 14,214–17,252 | 4.9–7.0× slower[^2] | stored |
-| 1 | 139–386 | 164–651 | 157–888 | 1.17–1.69× slower | +0.6% to +20.3% |
-| 6 | 49–130 | 73–237 | 67–214 | 1.48–1.82× slower | +0.1% to +4.3% |
-| 9 | 19–67 | 31–102 | 27–80 | 1.37–2.07× slower | +0.1% to +4.5% |
+| 0 | 2,639–2,833 | 12,859–19,144 | 14,214–17,252 | 0.14–0.21[^2] | stored |
+| 1 | 143–396 | 163–651 | 158–883 | 0.61–0.88 | +0.6% to +20.3% |
+| 6 | 62–183 | 74–237 | 67–214 | 0.73–0.84 | +0.1% to +4.3% |
+| 9 | 31–85 | 31–103 | 28–81 | 0.82–1.09 | +0.1% to +4.5% |
 
-[^1]: One-shot, the whole file in memory; each file's rate is the median of 10 runs, and
-    a cell gives the range over the seven files. DEFLATE speed is still being tuned:
-    task 005 ([tasks/005-parity.md](tasks/005-parity.md)) ports libdeflate's matcher to
-    reach its rate, and these numbers will change with it.
+[^1]: One-shot, the whole file in memory; a cell gives the range over the seven files.
+    Levels 1, 6, and 9 are each file's median of 3 alternating rounds of 5 runs at
+    `9f7a539`; level 0, unchanged since, the median of 10 runs at `6b57c40`. DEFLATE
+    speed is still being tuned: task 005 ([tasks/005-parity.md](tasks/005-parity.md))
+    ports libdeflate's matchers to reach its rate, and these numbers will change with
+    it. Level 9 is within 7 percent of it, or faster, on six files.
 [^2]: The level 0 gap is CRC-32, which both libraries compute with a carryless multiply
     that Goose can't express
     ([findings](docs/goose-findings.md#goose-has-no-carryless-multiply)).
