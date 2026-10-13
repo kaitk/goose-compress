@@ -1262,3 +1262,23 @@ Tried with it, in quick checks (one `bench LEVEL FILE 3` each, on `dickens`, `nc
 - The generated C compiled with `/clang:-fstrict-aliasing`, which `clang-cl` leaves off:
   levels 6 and 9 0.1 to 3.2 percent faster, level 1 -5.5 to +0.7 percent. The encoder
   state's reloads aren't mostly an aliasing matter.
+
+### Task 005: the symbol path at level 1, not kept
+
+2026-10-13, task 005, after `8ec4538`, same machine and method, at about 5 percent
+CPU load. A sampling profile of `8ec4538` at level 1 on `dickens` gives the matcher
+71.8 percent of the samples, `put_syms` 9.8, the length and distance code lookups
+(when a match is recorded and again when it's written) 6.8, CRC-32 5.3, and building
+the block's codes under 1.5. In the hand-fixed C (`p7`), finding the matches without
+recording them runs at 244 MB/s on `dickens` against libdeflate's 255, in quick checks
+(one `bench 1 FILE 3` each), so the gap left at level 1 is recording and writing the
+symbols, about 16 ms of the run against about 9 in libdeflate.
+
+- A match's distance code, extra-bit count, and extra bits recorded in its symbol, so
+  `put_syms` doesn't look the distance up again. Same output; in 3 alternating rounds
+  of 5 runs: level 1 -0.6 to +1.7 percent, level 6 -0.9 to +1.9, level 9 -1.9 to
+  +0.0. Not kept: within the 1 to 2 percent between two builds of the same code.
+- Literals gathered until 32 bits are held before the 8-byte store, as libdeflate
+  does: within 1 percent in quick checks. Not kept.
+- The next position's bucket prefetched at level 1, in `p7`: 2 to 8 percent slower in
+  quick checks; loaded early instead, as level 6 does, within 2 percent.
