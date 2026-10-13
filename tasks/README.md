@@ -45,5 +45,6 @@ Task 001 is the DEFLATE encoder with the gzip and zlib wrappers, goose-http's ta
 022.02, in steps that each give valid output; goose-http can build against step 1.
 zstd, task 004, followed once task 001 was measured, and is done; its speed, 2 to 3
 times slower than libzstd's, is still being improved. Task 003 takes the DEFLATE
-encoder's speed past task 001's. Task 002, brotli, waits on
+encoder's speed past task 001's. Task 005 takes it to parity with the C libraries on
+the Ryzen, or decides to proxy to them. Task 002, brotli, waits on
 a measurement that shows it's needed.
