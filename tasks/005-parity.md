@@ -49,14 +49,13 @@ costs as much on its own; not kept
 ([history](../docs/results-history.md#task-005-zstds-literals-and-sequences-at-257090f)).
 At `257090f`, libzstd is 1.34 to 1.57 times faster at level 1 and 1.11 to 1.26 at level
 3 on six files ([results](../docs/results.md#zstd-levels-1-and-3-at-257090f)).
+`7a96425` gives level 1 libzstd's 2^13-entry table: libzstd is then 1.32 to 1.40 times
+faster at level 1 on six files and 1.03 on `x-ray`, for output 0.0 to 12.1 percent
+larger than its own ([results](../docs/results.md#zstd-levels-1-and-3-at-7a96425)).
 Left for zstd:
 
 - The FSE steps and `put_seqs`, 1.8 times libzstd's time a byte on `webster` at
   `e1a9800`; the literals' Huffman coding on `x-ray`, 1.7 times.
-- A run at the commit that gives level 1 libzstd's 2^13-entry table (up to 18.6
-  percent faster, up to 7.8 percent more output,
-  [history](../docs/results-history.md#level-1s-hash-table-against-the-l2)), for
-  `docs/results.md` and the README.
 
 Left for DEFLATE, after zstd:
 

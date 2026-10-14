@@ -380,3 +380,28 @@ times on `x-ray`. At level 3, libzstd is 1.11 to 1.26 times faster on six files,
 the package 1.08 times faster on `x-ray`; klauspost's rate is 0.86 to 1.10 times the
 package's. Against libzstd at the package's 128 KB window, libzstd is 1.24 to 1.37
 times faster at level 1 and 1.19 to 1.34 at level 3.
+
+### zstd levels 1 and 3 at `7a96425`
+
+2026-10-14, task 005 step 5, Goose `46356c2`: level 1's hash table cut to libzstd's
+2^13 entries ([history](results-history.md#level-1s-hash-table-against-the-l2)),
+measured as at [`257090f`](#zstd-levels-1-and-3-at-257090f). The run went twice; each
+cell's medians agreed within 5.4 percent. The table is the first. Level 3's output is
+the same as before; level 1's is 0.0 to 12.1 percent larger than libzstd's at level 1,
+and 0.3498 of Silesia's 12 files against libzstd's 0.3455.
+
+| File | MB | Level 1 goose | libzstd | libzstd, 128 KB | klauspost | Level 3 goose | libzstd | libzstd, 128 KB | klauspost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 10.2 | 262.5 | 360.0 | 313.7 | 204.4 | 174.2 | 193.2 | 207.6 | 160.4 |
+| webster | 41.5 | 308.7 | 416.9 | 358.8 | 255.8 | 205.4 | 237.4 | 264.5 | 196.5 |
+| xml | 5.3 | 594.1 | 829.8 | 710.9 | 490.7 | 485.6 | 613.9 | 574.8 | 424.8 |
+| nci | 33.6 | 736.0 | 1,007.6 | 975.9 | 643.8 | 680.8 | 818.3 | 819.0 | 570.0 |
+| mozilla | 51.2 | 393.1 | 517.9 | 445.6 | 335.7 | 238.4 | 281.6 | 318.3 | 261.9 |
+| samba | 21.6 | 453.9 | 611.9 | 510.2 | 394.2 | 327.6 | 381.3 | 408.0 | 330.8 |
+| x-ray | 8.5 | 810.7 | 837.2 | 937.0 | 2,223.3 | 157.9 | 144.7 | 214.0 | 150.7 |
+
+At level 1, libzstd is 1.32 to 1.40 times faster on six files and 1.03 times on
+`x-ray`; klauspost's rate is 0.78 to 0.87 times the package's on six files, and 2.7
+times on `x-ray`. Against libzstd at the package's 128 KB window, whose output is 1 to 4
+percent larger than the package's on six files, libzstd is 1.12 to 1.33 times
+faster at level 1. Level 3 is as at `257090f`, within the runs' noise.

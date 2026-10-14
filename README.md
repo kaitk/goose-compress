@@ -154,16 +154,16 @@ gzip on a Ryzen 7 5800X3D under Windows 11, at `8ec4538`, over seven Silesia fil
     that Goose can't express
     ([findings](docs/goose-findings.md#goose-has-no-carryless-multiply)).
 
-zstd on the same Ryzen, at `257090f`, against libzstd v1.5.7 and klauspost/compress
+zstd on the same Ryzen, at `7a96425`, against libzstd v1.5.7 and klauspost/compress
 v1.20.3, all with the checksum, over the same seven files[^3]:
 
 | Level | goose | libzstd | klauspost | goose / libzstd rate | goose output vs libzstd's |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 230–750 MB/s | 360–1,010 MB/s | 210–2,300 MB/s | 0.64–0.84 | −5.4% to +9.3% |
-| 3 | 160–680 MB/s | 150–810 MB/s | 150–600 MB/s | 0.80–1.08 | +2.5% to +12.8%[^4] |
+| 1 | 260–810 MB/s | 360–1,010 MB/s | 200–2,220 MB/s | 0.72–0.97 | +0.0% to +12.1% |
+| 3 | 160–680 MB/s | 140–820 MB/s | 150–570 MB/s | 0.79–1.09 | +2.5% to +12.8%[^4] |
 
-[^3]: The median of 10 runs. klauspost's 2,300 MB/s is `x-ray`, whose literals it
-    leaves raw; on the other six files it's at most 660 MB/s. zstd's speed is still
+[^3]: The median of 10 runs. klauspost's 2,220 MB/s is `x-ray`, whose literals it
+    leaves raw; on the other six files it's at most 640 MB/s. zstd's speed is still
     being tuned ([tasks/005-parity.md](tasks/005-parity.md)).
 [^4]: libzstd's level 3 window is 2 MB, the package's 128 KB. Against libzstd at 128 KB,
     the package's output is 5.8 percent smaller to 0.4 percent larger.
