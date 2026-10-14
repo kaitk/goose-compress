@@ -1530,6 +1530,12 @@ of `bench LEVEL FILE 5 zstd`, the median of the rounds' medians. H1 and H2 are a
 
 The patches not kept are `build/task005/zs/h2.patch` and `s2.patch`.
 
+Tried after `7a96425`, not kept: S3, the extra bits as each value's low bits, as
+`ZSTD_encodeSequences` writes them (a code's baseline is a multiple of 2^bits), with
+no `LL_BASE` or `ML_BASE` load, and `LL_BITS` and `ML_BITS` read through 256-entry `u8`
+tables indexed by the code without a check. -0.1 to -3.3 percent in every cell of
+both levels, in 3 rounds against `7a96425` (`build/task005/zs/s3.patch`).
+
 #### Level 1's hash table against the L2
 
 Level 1's table holds 2^15 `u32`s, 128 KB, as klauspost's does; libzstd's level 1
