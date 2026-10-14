@@ -1255,8 +1255,8 @@ Tried with it, in quick checks (one `bench LEVEL FILE 3` each, on `dickens`, `nc
 - `match_len` as a plain `fn`: clang stopped inlining it, and level 6 lost 5 to 7
   percent on `x-ray`.
 - `load32` as an `inline fn`: within 1 percent, or up to 4 percent slower at level 9.
-  Its slice check stays at every inlined call
-  ([findings](goose-findings.md#bounds-check-elimination-doesnt-combine-facts-about-a-difference)).
+  Its slice check stays at every inlined call: the analysis doesn't drop the check on
+  a slice taken at a difference, `s[p - d..p - d + 4]`.
 - `walk` with the distance test as `d >= 1 && d <= reach`, `reach <= p` asserted, and
   the window sliced once: no check dropped, so no build was measured.
 - The generated C compiled with `/clang:-fstrict-aliasing`, which `clang-cl` leaves off:
@@ -1468,8 +1468,7 @@ runs of their own. Each build writes the same output.
   q + 4 <= w.len`. Few checks drop, and each byte keeps one where the slice kept one.
 - `w3`: the same loads through a slice, as `load32` does, with both positions and the
   hash reads guarded inside the helpers. Almost nothing drops: the analysis ignores a
-  guard written `i + 4 <= w.len`
-  ([findings](goose-findings.md#bounds-check-elimination-ignores-a-constant-added-to-the-index)).
+  guard written `i + 4 <= w.len`, a gap goose-http's findings record.
 - `w6`: the guards written `q <= w.len - 4`, over the whole window, and only on the
   candidate. Every window read's check drops; what's left is `zstd_match_len`'s and
   `seqs[nseq]`. Still 2.7 to 12.1 percent slower.

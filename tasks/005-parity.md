@@ -17,8 +17,7 @@ runs at 0.85 to 1.12 of libdeflate's rate, at or above it on six files of seven,
 ([results](../docs/results-history.md#task-005-8-byte-match-extension-at-8ec4538)).
 The window reads kept their bounds checks, which the compiler couldn't drop at
 `a6249a4`; at `46356c2` it drops them on `win[p - d]` after a guard, but not on a
-slice taken at a difference, as `load32` takes one
-([findings](../docs/goose-findings.md#bounds-check-elimination-doesnt-combine-facts-about-a-difference)),
+slice taken at a difference, as `load32` takes one,
 and strict aliasing gave at most 3 percent. At level 1, finding matches alone runs at
 libdeflate's rate in C; recording and writing the symbols takes about 16 ms of a
 `dickens` run against libdeflate's 9, and the small changes to that path tried came

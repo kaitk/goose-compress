@@ -319,7 +319,7 @@ Per file, and why DEFLATE keeps its own, in
 2026-10-14: the pin moved from `0bdbd18` to `46356c2`. The tests pass, and `bench` at
 `d10dd61` writes the same output as with `0bdbd18`. The compiler drops 584 of
 `bench`'s 862 index checks, against 560 of 851 at `a6249a4`; since then it also drops
-the check on `win[p - d]` after a guard ([findings](goose-findings.md#bounds-check-elimination-doesnt-combine-facts-about-a-difference)).
+the check on `win[p - d]` after a guard.
 
 `bench` at `e1a9800` built by `46356c2`, against `d10dd61` built by `0bdbd18` (the
 source differs only in a comment), in 3 alternating rounds of `bench LEVEL FILE 5`
