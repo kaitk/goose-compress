@@ -776,9 +776,10 @@ fn seq_extra(e: ZstdEncoder&, i: i64) -> u64, i64, u64, i64, u64, i64 {
 // end: so it's written from the last sequence to the first. Each sequence
 // writes the states its decoder moves on by, offset's first, then its extra
 // bits, the literal length's first, and the first sequence's states close it,
-// the literal length's last, then a 1 bit. A sequence's bits are written to
-// a buffer in two parts, the states and the literal length's extra bits, then
-// the rest, each under 57 bits, and the whole bytes kept.
+// the literal length's last, then a 1 bit. A sequence's bits go to a buffer
+// at once, and the whole bytes are kept: the states take at most 26 bits and
+// fewer than 8 are left over, so up to 30 extra bits fit a u64. With more,
+// the states and the literal length's extra bits go first.
 fn put_seqs(e: ZstdEncoder&, out: u8[>..]&, tl: Fse&, to: Fse&, tm: Fse&) {
     // A sequence writes up to 12 bytes before the buffer is checked.
     var buf: u8[STAGE + 16] = [0; STAGE + 16];
@@ -811,10 +812,12 @@ fn put_seqs(e: ZstdEncoder&, out: u8[>..]&, tl: Fse&, to: Fse&, tm: Fse&) {
         let lx1, ln1, mx1, mn1, ox1, on1 = seq_extra(e, i);
         bits |= lx1 << nbits;
         nbits += ln1;
-        put_le64(buf[o..o + 8], bits);
-        o += nbits >> 3;
-        bits >>= nbits & ~7;
-        nbits &= 7;
+        if ln1 + mn1 + on1 > 30 {
+            put_le64(buf[o..o + 8], bits);
+            o += nbits >> 3;
+            bits >>= nbits & ~7;
+            nbits &= 7;
+        }
         bits |= mx1 << nbits;
         nbits += mn1;
         bits |= ox1 << nbits;
