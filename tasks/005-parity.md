@@ -44,12 +44,17 @@ in the C of zstd's matchers gains 1.9 to 6.1 percent, but the Goose that drops t
 window reads' checks loses 2.7 to 12.1, because marking `load32` and `load64` `inline`
 costs as much on its own; not kept
 ([history](../docs/results-history.md#task-005-zstds-window-reads-without-checks-not-kept)).
+`b0199ba` codes literals four at a time (+5.2 percent on `x-ray` at level 1) and
+`257090f` flushes a sequence's bits once (+0.4 to +3.3 percent)
+([history](../docs/results-history.md#task-005-zstds-literals-and-sequences-at-257090f)).
 Left for zstd:
 
-- The FSE steps and `put_seqs`, 14 percent at level 1 on `webster`; the literals'
-  Huffman coding on `x-ray`, about 1.8 times libzstd's time a byte.
-- The tables against the 512 KB L2: libzstd's level 1 hash table is 32 KB, the
-  package's 128 KB.
+- The FSE steps and `put_seqs`, 1.8 times libzstd's time a byte on `webster` at
+  `e1a9800`; the literals' Huffman coding on `x-ray`, 1.7 times.
+- Level 1's hash table: 2^14 entries gain up to 12.3 percent for up to 3.1 percent
+  more output, and 2^13, libzstd's 32 KB, up to 18.6 for up to 7.8 percent more
+  ([history](../docs/results-history.md#level-1s-hash-table-against-the-l2)). The
+  choice is open.
 
 Left for DEFLATE, after zstd:
 

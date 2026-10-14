@@ -1484,3 +1484,72 @@ table's load and the 8- and 4-byte compares) with `w7`'s samples spread over mor
 the loop. What the unchecked C gains, Goose can't reach this way at this pin. The
 patches are `build/task005/zs/winidx.patch` (`w3`), `winidx-w6.patch`, and
 `inline-loads.patch` (`w7`).
+
+### Task 005: zstd's literals and sequences, at `257090f`
+
+2026-10-14, Goose `46356c2`, task 005 step 5. A profile at `e1a9800`, taken as at
+[`8ec4538`](#zstd-profile-at-8ec4538), level 1, against libzstd built from source:
+
+| Work | Package | ms/MB | libzstd | ms/MB |
+|---|---|---:|---|---:|
+| `webster`: matching | `match_zstd_fast`, 63% | 2.68 | `ZSTD_compressBlock_fast`, 69% | 1.80 |
+| `webster`: the FSE steps and sequences' bits | `put_seqs`, 15% | 0.62 | `ZSTD_encodeSequences`, 13% | 0.34 |
+| `x-ray`: Huffman coding the literals | `put_huff_literals`, 45% | 0.72 | `HUF_compress1X_usingCTable_internal`, 33% | 0.42 |
+| `x-ray`: counting, codes, and tables | `zstd_block`, 27% | 0.44 | `HIST_count_parallel_wksp` and `HIST_count_simple`, 33% | 0.42 |
+
+Each change against the build before it, with the same output, in 3 alternating rounds
+of `bench LEVEL FILE 5 zstd`, the median of the rounds' medians. H1 and H2 are against
+`e1a9800`, S1 against H1, and S2 against S1.
+
+| File | Level | Base MB/s | `b0199ba` (H1) | H2 | `257090f` (S1) | S2 |
+|---|---:|---:|---:|---:|---:|---:|
+| dickens | 1 | 219.5 | +2.0% | -0.9% | +2.7% | -0.0% |
+| webster | 1 | 264.6 | -0.1% | -0.5% | +1.9% | -0.9% |
+| xml | 1 | 552.8 | +0.4% | -1.8% | +1.7% | +0.2% |
+| nci | 1 | 740.8 | +1.3% | +0.4% | +1.6% | -0.4% |
+| mozilla | 1 | 325.3 | +1.9% | +1.4% | +0.9% | +0.7% |
+| samba | 1 | 401.1 | +0.8% | -0.4% | +3.3% | +0.0% |
+| x-ray | 1 | 667.0 | +5.2% | +2.8% | +1.2% | +2.1% |
+| dickens | 3 | 170.0 | +1.0% | -2.4% | +1.4% | +0.1% |
+| webster | 3 | 206.4 | +0.6% | -0.4% | +1.1% | +0.0% |
+| xml | 3 | 477.6 | +0.8% | -1.3% | +1.4% | -0.4% |
+| nci | 3 | 680.0 | -1.1% | -3.6% | +0.4% | -1.1% |
+| mozilla | 3 | 237.0 | +0.9% | +0.1% | +0.9% | -0.1% |
+| samba | 3 | 328.2 | +0.4% | -0.4% | +1.1% | -0.7% |
+| x-ray | 3 | 156.5 | -0.1% | -0.9% | +1.6% | -1.1% |
+
+- `b0199ba` (H1) codes a Huffman stream's literals four at a time, a loop of fixed
+  count, and the last one to three after it; the loop had run `min(q, 4)` times. Kept.
+- H2, on H1: each literal's code and length from one `u32` table, not a `u16` and a
+  `u8` one. Slower than H1 in 13 cells of 14. Not kept.
+- `257090f` (S1) writes a sequence's bits with one flush, not two, where its extra bits
+  are at most 30, as `ZSTD_encodeSequences` does. Kept.
+- S2: the FSE tables' `dnb` and `dfs` at 256 entries, indexed by the `u8` code, and
+  `next` indexed under a mask, which drops `fse_step`'s two bounds checks. Within noise,
+  and 9,744 more bytes an encoder. Not kept.
+
+The patches not kept are `build/task005/zs/h2.patch` and `s2.patch`.
+
+#### Level 1's hash table against the L2
+
+Level 1's table holds 2^15 `u32`s, 128 KB, as klauspost's does; libzstd's level 1
+holds 2^13, 32 KB, in the Ryzen's 512 KB L2 beside the window. Built at `257090f` with
+level 1's hash cut to 14 and 13 bits (the table keeps its size, and level 3 its 15),
+in 3 alternating rounds of `bench 1 FILE 5 zstd`, against 2^15; output against
+libzstd's at level 1:
+
+| File | 2^15 MB/s | 2^14 | 2^13 | Output vs libzstd: 2^15 | 2^14 | 2^13 |
+|---|---:|---:|---:|---:|---:|---:|
+| dickens | 224.6 | +7.0% | +17.7% | -5.4% | -2.4% | +1.9% |
+| webster | 271.2 | +7.2% | +13.6% | -2.9% | -1.1% | +2.0% |
+| xml | 560.0 | +2.0% | +5.7% | +9.3% | +10.4% | +12.1% |
+| nci | 760.5 | -1.6% | -1.0% | +2.8% | +2.7% | +2.8% |
+| mozilla | 329.4 | +12.3% | +18.6% | -1.3% | -0.5% | +1.1% |
+| samba | 414.3 | +4.5% | +9.4% | -0.1% | +0.5% | +1.9% |
+| x-ray | 700.0 | +11.5% | +13.6% | -0.2% | -0.0% | +0.0% |
+
+The smaller table trades output for rate: 2^13 runs up to 18.6 percent faster and
+writes up to 7.8 percent more than 2^15, and more than libzstd on every file. 2^14
+gains up to 12.3 percent for at most 3.1 percent more output, and stays at or under
+libzstd's size on four files of seven, where 2^15 is under it on five. Level 1 stays at 2^15 until the choice is made
+(`build/task005/zs/tab.patch`, at 2^14).
