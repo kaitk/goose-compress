@@ -101,95 +101,13 @@ past the source modulo 4,096, and in 1.9 to 2.1 µs at 32 bytes or more. glibc's
 `memcpy` takes 1.0 µs either way. The 2^15-entry table, 128 KB less to zero and copy,
 takes 112 µs on Windows.
 
+On `46356c2` the program still takes 6.0 s on the Ryzen under Windows, 60 µs a `make`.
+
 `var e: Encoder;` with only a type isn't a way around the literal: the compiler
 rejects a read of `e` as "may be used before it is assigned".
 
 Workaround: build an encoder once and `reset` it for each stream, which zeroes its
 fields in place (task 003). `compress` does so with an encoder it keeps.
-
-## `clz`, `ctz`, and `popcount` loop over the bits
-
-Found on `5c83a5a`, task 001; `clz` on x86-64 on `c38dc0f`, task 003. Status: fixed in
-`d687028`, checked on `0bdbd18` (2026-10-13): std's three are now runtime functions over
-the C compiler's builtins, and the program below takes 0.12 s on the Ryzen under `goose
-build`. zstd's `match_len` uses `ctz` since `d10dd61`; DEFLATE's
-keeps the de Bruijn multiply, because `ctz` there made the chain search 3 to 5 percent
-slower on `x-ray` at levels 6 and 9, through how clang compiles the code around it
-([results](results-history.md#task-005-zstds-own-match_len-at-d10dd61)). The length
-and distance code tables are still to be measured against `clz`.
-
-std's `clz`, `ctz`, and `popcount` are Goose loops, one iteration a bit (one a set
-bit for `popcount`). Apple clang 21 turns `clz`'s loop into the `clz` instruction,
-but not the other two: `ctz` and `popcount` run as loops. Expected: one instruction
-each, as C's `__builtin_clzll`, `__builtin_ctzll`, and `__builtin_popcountll` give.
-The program below takes 0.9 s on an M1 Pro, 9 ns a call at 21 trailing zeros, and its
-`main` has no `rbit` or `clz`. With `popcount` in place of `ctz` it takes 0.63 s; with
-`clz`, 0.02 s.
-
-On x86-64, clang 22.1.3 leaves `clz`'s loop a loop too, under `goose build` on Windows
-(`clang-cl /O2`) and with `--cc clang` on Linux: with `clz` in place of `ctz`, the
-program takes 0.58 s on a Ryzen 7 5800X3D. The baseline x86-64 target has no `lzcnt`,
-but `bsr` would do. `len_code` and `dist_code` used `clz` on each match, twice a
-match, and level 1 ran at half the M1 Pro's rate until tables replaced them (task 003).
-
-    import std;
-    import os;
-
-    fn main() {
-        var x = (args().len as! u64) << 40;
-        var n = 0;
-        for i in 100000000 {
-            n += ctz(x);
-            x += 1 << 20;
-        }
-        print(n);
-    }
-
-An 8-byte match compare that found the first differing byte with `ctz` made level 1
-30-40 percent slower than comparing a byte at a time (task 001 step 4).
-
-Workaround: no `clz`, `ctz`, or `popcount` in a hot path. A de Bruijn multiply and a
-64-entry table was still 3-12 percent slower at level 1 than shifting the xor of the
-two words a byte at a time. The length and distance codes and a distance's logarithm
-come from tables built once.
-
-## `simd fn` doesn't turn std bit loops into instructions
-
-Found on `a6249a4`, task 005. Status: open
-
-A `simd fn`'s AVX2 version is compiled with `target("avx2,bmi,bmi2,lzcnt,popcnt")`
-(`GS_SIMD_TARGET1` in the runtime), so `tzcnt` and `popcnt` are available to clang
-there. std's `ctz` and `popcount` still compile to loops in it. `ctz`'s loop, shift
-right until the low bit is set, isn't an idiom LLVM recognizes, even in hand-written C.
-`popcount`'s loop, clear the lowest set bit and count, is one, but LLVM rewrites it
-only when it isn't nested in another loop: as a function of its own it becomes
-`popcntq`, and inlined into a loop, the only place a match compare calls it, it stays
-a loop. Expected: one instruction each, at least in a `simd fn`'s versions. The
-program below, with `ctz` or with `popcount((x & (0 - x)) - 1)` in its place, takes
-0.75 to 1.0 s on a Ryzen 7 5800X3D under Windows, as the baseline does, and its
-binary has no `tzcnt` or `popcnt`.
-
-    import std;
-    import os;
-
-    simd fn count(x0: u64) -> i64 {
-        var x = x0;
-        var n = 0;
-        for i in 100000000 {
-            n += ctz(x);
-            x += 1 << 20;
-        }
-        return n;
-    }
-
-    fn main() {
-        print(count((args().len as! u64) << 40));
-    }
-
-Workaround: none; `ctz` stays out of hot paths. A `simd` matcher whose `match_len`
-compares 8 bytes and calls `ctz` was 4 to 26 percent slower than `6b57c40` at levels 1,
-6, and 9 on six Silesia files of seven
-([results](results-history.md#step-2-simd-fn-gives-stds-bit-scans-no-instruction)).
 
 ## Bounds checks can't be turned off to measure them
 
@@ -207,40 +125,22 @@ a copy of the file and compile it with that command.
 
 ## Bounds-check elimination doesn't combine facts about a difference
 
-Found on `a6249a4`, task 005. Status: open
+Found on `a6249a4`, task 005; narrowed on `46356c2`. Status: open
 
-The analysis (spec §10.5) drops a check when a guard bounds the index itself, and when
-the index is reduced with `%`. It keeps the check on `s[p - d]` after a guard that
-proves `0 <= p - d < s.len`, and on a slice's constant indexes when the slice was taken
-at a difference. Every window read in an LZ77 matcher is at a position minus a
-distance, so none of them lose their checks. Expected: `1 <= d <= p < s.len` proves
-`s[p - d]` in range, and `s[i..i + 4]` proves `c[0]` to `c[3]`, as it does when `i` is
-a parameter. With every call inlined into `main`, the checks marked `kept` stay:
+The analysis (spec §10.5) drops the check on `s[p - d]` after a guard that proves
+`0 <= p - d < s.len`, but keeps the check on a slice taken at a difference,
+`s[p - d..p - d + 4]`, after a guard that proves it in range. It also keeps the check on
+a table indexed by a shift that leaves fewer bits than the table's size, `T[x >> 58]`
+for 64 entries. With every call inlined into `main`, the checks marked `kept` stay:
 
-    fn a(s: const u8[:], i: i64) -> u8 {
-        guard i >= 0 && i < s.len else { return 0; }
-        return s[i];                                  // dropped
-    }
-    fn b(s: const u8[:], p: i64, d: i64) -> u8 {
-        guard p < s.len && d >= 1 && d <= p else { return 0; }
-        return s[p - d];                              // kept
-    }
-    fn c(s: const u8[:], p: i64, d: i64) -> u8 {
-        guard p < s.len else { return 0; }
-        let r = min(32768, p);
-        assert(r <= p);                               // kept, as a check of its own
-        guard d >= 1 && d <= r else { return 0; }
-        return s[p - d];                              // kept
-    }
     fn f(s: const u8[:], p: i64, d: i64) -> u8 {
         guard p + 4 <= s.len && d >= 1 && d <= p else { return 0; }
         let w = s[p - d..p - d + 4];                  // kept
-        return w[0] ^ w[3];                           // both kept
+        return w[0] ^ w[3];                           // both dropped
     }
     let T: i64[64] = [0; 64];
     fn e(x: u64) -> i64 { return T[x >> 58]; }        // kept
     fn e2(x: u64) -> i64 { return T[(x >> 58) % 64]; } // dropped
 
-Workaround: index tables with `% n`, as `match_len`'s de Bruijn table does. The window
-reads keep their checks: restating the distance test as `d >= 1 && d <= reach`, with
-`reach <= p` asserted and the window sliced once per search, dropped none of them.
+Workaround: index tables with `% n`, as the zstd hash tables do. `load32` and `load64`
+slice the window at a position minus a distance, so those reads keep their checks.

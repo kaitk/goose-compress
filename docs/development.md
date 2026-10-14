@@ -9,7 +9,7 @@ should run unchanged on Linux. The zstd benchmark has run on macOS only (2026-10
 
 | Tool | macOS (2026-10-13) | Windows (2026-10-13) | For |
 |---|---|---|---|
-| Goose compiler | `a6249a4`, not yet run at the pin in `README.md`, `0bdbd18` | `0bdbd18`, the pin | everything |
+| Goose compiler | `a6249a4`, not yet run at the pin in `README.md`, `46356c2` | `46356c2`, the pin | everything |
 | OS | macOS 26.3.1, Apple M1 Pro | Windows 11 Pro 10.0.26200, Ryzen 7 5800X3D | |
 | C compiler | Apple clang 21.0.0 (`clang-2100.0.123.102`) | clang 22.1.3 from Visual Studio Build Tools 2026 (18): `clang-cl` for `goose build`, `clang` for `bench/` | `goose build`, `bench/` |
 | CMake | 4.4.4 (Homebrew) | 4.3.1-msvc1 and Ninja 1.13.2, from the Build Tools | building the Goose compiler, libdeflate, zlib-ng, and libzstd |
@@ -27,7 +27,7 @@ Leave it on the pinned commit and don't edit it (`AGENTS.md`).
 
 ```sh
 git clone -o upstream https://github.com/aardappel/goose.git ../goose
-git -C ../goose checkout 0bdbd18
+git -C ../goose checkout 46356c2
 cmake -S ../goose -B ../goose/build-macos -DCMAKE_BUILD_TYPE=Release
 cmake --build ../goose/build-macos -j
 export GOOSE=$PWD/../goose/build-macos/goose
@@ -247,10 +247,6 @@ build/bench/bench 6 build/bench/corpus/mozilla 20 & sleep 1; sample bench 4 -fil
 - Shrinking a `u8[>..]&` parameter, even after growing it in the same call, makes the
   function one that shrinks it, and a caller holding a slice of that array can no
   longer call it (spec §5.1). The package's functions only append to `out`.
-- std's `clz`, `ctz`, and `popcount` are loops. Apple clang turns `clz` into an
-  instruction on arm64, and clang on x86-64 doesn't, so a `clz` that costs nothing on
-  the M1 Pro can halve a rate on the Ryzen
-  ([findings](goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)).
 - A hot path that is fast on one machine can be slow on the other: measure a change on
   both, or say which one it was measured on.
 - Under zsh, `set -- $v` doesn't split `$v` into words; run such loops with `sh`.

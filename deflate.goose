@@ -676,10 +676,7 @@ fn dist_code(d: u32) -> i64, i64, u32 {
     return e & 31, (e >> 5) & 15, x - (e >> 9);
 }
 
-// len_code and dist_code as tables, since std's clz is a loop that clang turns
-// into an instruction for arm64 but not for x86-64
-// ([findings](docs/goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)).
-// An entry holds the code, the extra bits' count from bit 9 (bit 5 for a
+// len_code and dist_code as tables. An entry holds the code, the extra bits' count from bit 9 (bit 5 for a
 // distance), and the value the extra bits count from, from bit 13 (bit 9).
 // Distances past 256 share a code 128 at a time, so they're looked up by d >> 7.
 let LEN_TAB = len_tab();

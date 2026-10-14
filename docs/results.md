@@ -313,3 +313,10 @@ table. Same output in both formats.
 
 Per file, and why DEFLATE keeps its own, in
 [results-history.md](results-history.md#task-005-zstds-own-match_len-at-d10dd61).
+
+### Goose `46356c2`
+
+2026-10-14: the pin moved from `0bdbd18` to `46356c2`. The tests pass, and `bench` at
+`d10dd61` writes the same output as with `0bdbd18`. Its rates at this pin are not yet
+measured. The compiler drops 584 of `bench`'s 862 index checks, against 560 of 851 at
+`a6249a4`; since then it also drops the check on `win[p - d]` after a guard ([findings](goose-findings.md#bounds-check-elimination-doesnt-combine-facts-about-a-difference)).

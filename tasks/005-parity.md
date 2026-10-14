@@ -15,7 +15,9 @@ at 0.51 to 0.63 of its rate, 11 to 28 percent slower than before
 runs at 0.85 to 1.12 of libdeflate's rate, at or above it on six files of seven, level
 6 at 0.74 to 0.88, and level 1 at 0.56 to 0.66
 ([results](../docs/results-history.md#task-005-8-byte-match-extension-at-8ec4538)).
-The window reads keep their bounds checks, which the compiler can't drop
+The window reads kept their bounds checks, which the compiler couldn't drop at
+`a6249a4`; at `46356c2` it drops them on `win[p - d]` after a guard, but not on a
+slice taken at a difference, as `load32` takes one
 ([findings](../docs/goose-findings.md#bounds-check-elimination-doesnt-combine-facts-about-a-difference)),
 and strict aliasing gave at most 3 percent. At level 1, finding matches alone runs at
 libdeflate's rate in C; recording and writing the symbols takes about 16 ms of a
@@ -84,9 +86,8 @@ gets from Goose, not in assembly:
    `syms`, `prev`, and `head`, so clang may reload them after every store into those
    arrays. libdeflate keeps its state in locals and writes it back once. A global
    `Encoder` moved level 6 by 2 to 7 percent, which shows how fragile this codegen is.
-3. `match_len` compares a byte at a time, because std's `ctz` is a loop
-   ([findings](../docs/goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)).
-   libdeflate XORs 8 bytes and takes one `tzcnt`.
+3. `match_len` compares a byte at a time, because std's `ctz` was a loop (until Goose
+   `d687028`). libdeflate XORs 8 bytes and takes one `tzcnt`.
 4. On `x-ray`, 44 percent of `search`'s samples land at the loop's exits. In libdeflate,
    no instruction takes more than 7 percent.
 5. CRC-32 without carryless multiply, at 2.6 GB/s against about 17 GB/s.

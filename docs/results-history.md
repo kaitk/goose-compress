@@ -270,7 +270,7 @@ Slice-by-16 also took level 1 from 87 to 110 MB/s on `dickens` and from 134 to 1
 `xml`. Comparing the 4 hashed bytes first turns away a candidate from an empty bucket
 whose first 3 bytes happen to match the stream's start, so it gave 1 to 2 bytes less
 output on `dickens` and `mozilla`. The 8-byte compare lost with std's `ctz` because
-`ctz` is a loop ([findings](goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)),
+`ctz` was a loop (until Goose `d687028`),
 and without it moved rates by -3 to +5 percent, about the noise. Matches are short (at
 level 6, the candidates extended on `dickens` match 5.7 bytes on average), and at
 levels 6 and 9 the time goes into walking the chains.
@@ -879,8 +879,8 @@ libraries ran faster here than on the M1 Pro, and the package's level 1 at half 
 rate: `bench` built in WSL on the same CPU with `--cc clang` ran level 1 on `dickens`
 at 83.4 MB/s, so the cause is the x86-64 code, not Windows. `perf` there put 66 percent
 of level 1's time in `end_block`, in a loop that shifts one bit an iteration: std's
-`clz`, which clang turns into one instruction on arm64 but not on x86-64
-([findings](goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)).
+`clz`, which clang turned into one instruction on arm64 but not on x86-64 (until Goose
+`d687028`).
 
 ### Task 003: each change, measured on its own
 
@@ -1011,7 +1011,7 @@ and `dickens` at levels 1, 6, and 9.
 
 A `simd fn`'s AVX2 version is compiled with `target("avx2,bmi,bmi2,lzcnt,popcnt")`, so
 `tzcnt` and `popcnt` are available to clang there, but std's `ctz` and `popcount` stay
-loops in it ([findings](goose-findings.md#simd-fn-doesnt-turn-std-bit-loops-into-instructions)).
+loops in it (until Goose `d687028`).
 Two builds, run in the same rounds as step 3's first run:
 
 - S1: `simd` on `match_fast` and `match_chains`, so `search` and `match_len` are

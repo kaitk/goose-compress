@@ -93,8 +93,10 @@ until the task named beside it confirms or replaces it.
   At level 1, comparing the 4 bytes at once made the encoder 16 to 27 percent faster
   (task 001 step 4, 2026-10-12).
 - **A match is extended 8 bytes at a time, after one byte,** with the first differing
-  byte found by a de Bruijn multiply and a 64-entry table, because std's `ctz` is a
-  loop ([findings](../goose-findings.md#clz-ctz-and-popcount-loop-over-the-bits)).
+  byte found by a de Bruijn multiply and a 64-entry table. std's `ctz` was a loop until
+  Goose `d687028`; as an instruction it made DEFLATE's chain search 3 to 5 percent
+  slower on `x-ray` at levels 6 and 9, and zstd's own `match_len` uses it
+  ([results](../results-history.md#task-005-zstds-own-match_len-at-d10dd61), 2026-10-14).
   `match_len` is an `inline fn`: as a call it lost more than the compare gained, 5 to 7
   percent at level 6 on `x-ray`. Against a byte at a time it made every level 0.8 to
   9.0 percent faster on the Ryzen, most on `nci` (task 005, 2026-10-13). With `ctz`

@@ -208,7 +208,7 @@ tasks/               task tracking (tasks/README.md)
 
 | What | Pin | Why |
 |---|---|---|
-| Goose compiler | `aardappel/goose` `0bdbd18` (`master`, 2026-10-13) | The language and stdlib change often |
+| Goose compiler | `aardappel/goose` `46356c2` (`master`, 2026-10-13) | The language and stdlib change often |
 | Benchmark libraries | libdeflate v1.26, zlib-ng 2.3.3, and libzstd v1.5.7 in `bench/build.sh`; klauspost/compress v1.20.3 in `bench/klauspost/go.mod` | Each result names the versions it ran against |
 
 Move the pin in its own commit, with the tests and results that still hold
