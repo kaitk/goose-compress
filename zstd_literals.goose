@@ -268,7 +268,7 @@ fn put_huff_stream(out: u8[>..]&, run: const u8[:], l: ZstdLits&, i: i64) {
     // Four codes take at most 44 bits, so with the fewer than 8 left over
     // they fit a u64, whose shifts stop short of 64.
     var q = run.len;
-    while q > 0 {
+    while q >= 4 {
         put_le64(buf[o..o + 8], bits);
         o += nbits >> 3;
         bits >>= nbits & ~7;
@@ -278,12 +278,27 @@ fn put_huff_stream(out: u8[>..]&, run: const u8[:], l: ZstdLits&, i: i64) {
             sent += o;
             o = 0;
         }
-        for t in min(q, 4) {
+        for t in 4 {
             q--;
             let b = run[q];
             bits |= (l.code[b] as u64) << nbits;
             nbits += l.len[b];
         }
+    }
+    put_le64(buf[o..o + 8], bits);
+    o += nbits >> 3;
+    bits >>= nbits & ~7;
+    nbits &= 7;
+    if o >= STAGE {
+        out.append(buf[..o]);
+        sent += o;
+        o = 0;
+    }
+    while q > 0 {
+        q--;
+        let b = run[q];
+        bits |= (l.code[b] as u64) << nbits;
+        nbits += l.len[b];
     }
     put_le64(buf[o..o + 8], bits);
     o += nbits >> 3;
