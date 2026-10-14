@@ -144,3 +144,32 @@ for 64 entries. With every call inlined into `main`, the checks marked `kept` st
 
 Workaround: index tables with `% n`, as the zstd hash tables do. `load32` and `load64`
 slice the window at a position minus a distance, so those reads keep their checks.
+Written `p <= s.len - 4`
+([below](#bounds-check-elimination-ignores-a-constant-added-to-the-index)), the guard
+still leaves the slice's check.
+
+## Bounds-check elimination ignores a constant added to the index
+
+Found on `46356c2`, task 005. Status: open
+
+A guard that bounds an index with a constant added to it, `p + 4 <= s.len`, drops no
+check, not even on `s[p]`; `p + 3 < s.len` and `s.len >= p + 4` drop none either. The
+same bound with the constant on the length's side, `p <= s.len - 4`, drops both.
+Goose's arithmetic is checked, so the forms are equivalent. With every call inlined
+into `main`:
+
+    fn f(s: const u8[:], p: i64) -> i64 {
+        guard p >= 0 && p + 4 <= s.len else { return 0; }
+        return s[p] + s[p + 3];                           // both kept
+    }
+
+    fn g(s: const u8[:], p: i64) -> i64 {
+        guard p >= 0 && p <= s.len - 4 else { return 0; }
+        return s[p] + s[p + 3];                           // both dropped
+    }
+
+Workaround: write the bound on the length's side. In zstd's matchers, guards in that
+form drop every window read's check, but marking `load32` and `load64` `inline`, which
+puts the reads where a guard can reach them, costs 0.5 to 12 percent on its own
+([results](results-history.md#task-005-zstds-window-reads-without-checks-not-kept)),
+so the matchers keep the checks.

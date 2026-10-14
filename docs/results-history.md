@@ -1429,3 +1429,58 @@ its 8 bytes from two `load32`s, as before.
 | x-ray | 3 | 144.8 | +7.3% | 6 | 88.8 | +1.2% |
 
 gzip at level 9: -1.2 to +2.7 percent.
+
+### Task 005: zstd's window reads without checks, not kept
+
+2026-10-14, Goose `46356c2`, task 005 step 5, each build against `e1a9800` in 3
+alternating rounds of `bench LEVEL FILE 5 zstd`, the median of the rounds' medians.
+At `e1a9800`, `match_zstd_fast` keeps 6 index checks and 12 slice and assert checks
+(`build/task005/port/fnchecks.py`), and `match_zstd_dfast` 11 and 21: the backward
+extension's `win[p - 1 - d]`, `zstd_match_len`'s two slices, its assert, and its last
+loop, and `seqs[nseq]`. Each of its 17 and 27 `load32` and `load64` calls keeps the
+check on its slice.
+
+| File | Level | Base MB/s | Unchecked C | `w1` | `w3` | `w6` | `w7` |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 1 | 219.6 | +5.5% | -17.9% | -9.4% | -7.9% | -4.2% |
+| webster | 1 | 262.8 | +5.6% | -17.0% | -8.6% | -7.5% | -5.5% |
+| xml | 1 | 553.0 | +4.7% | -17.7% | -10.6% | -7.4% | -5.3% |
+| nci | 1 | 740.0 | +1.9% | -17.1% | -10.1% | -6.4% | -4.6% |
+| mozilla | 1 | 325.9 | +6.1% | -19.4% | -12.4% | -8.2% | -5.0% |
+| samba | 1 | 402.2 | +4.7% | -16.9% | -9.4% | -4.9% | -2.3% |
+| x-ray | 1 | 653.8 | +2.5% | -5.2% | -4.5% | -2.7% | -0.5% |
+| dickens | 3 | 164.8 | +6.1% | -20.4% | -13.4% | -8.4% | -7.1% |
+| webster | 3 | 204.6 | +2.9% | -21.8% | -13.9% | -7.9% | -8.3% |
+| xml | 3 | 477.0 | +3.9% | -23.1% | -14.0% | -8.8% | -7.3% |
+| nci | 3 | 668.6 | +3.4% | -22.5% | -10.7% | -6.7% | -5.7% |
+| mozilla | 3 | 234.9 | +3.9% | -27.0% | -15.7% | -8.6% | -8.3% |
+| samba | 3 | 321.8 | +3.4% | -22.7% | -13.5% | -7.0% | -5.7% |
+| x-ray | 3 | 154.6 | +5.5% | -36.6% | -26.8% | -12.1% | -12.2% |
+
+The base column is the first comparison's; the others ran against the same build in
+runs of their own. Each build writes the same output.
+
+- Unchecked C: the C `goose build` writes at `e1a9800`, with every check in the two
+  matchers, `load32`, and `load64` removed (`build/task005/zs/unchk.py`). The ceiling
+  for this work: +1.9 to +6.1 percent.
+- `w1`: the matchers read a slice `w = e.win[..end]` through `inline` loads of
+  plain indexes, `w[i] | w[i + 1] << 8 ...`, with match candidates behind `q >= 0 &&
+  q + 4 <= w.len`. Few checks drop, and each byte keeps one where the slice kept one.
+- `w3`: the same loads through a slice, as `load32` does, with both positions and the
+  hash reads guarded inside the helpers. Almost nothing drops: the analysis ignores a
+  guard written `i + 4 <= w.len`
+  ([findings](goose-findings.md#bounds-check-elimination-ignores-a-constant-added-to-the-index)).
+- `w6`: the guards written `q <= w.len - 4`, over the whole window, and only on the
+  candidate. Every window read's check drops; what's left is `zstd_match_len`'s and
+  `seqs[nseq]`. Still 2.7 to 12.1 percent slower.
+- `w7`: `e1a9800` with only `load32` and `load64` marked `inline`, which drops no
+  check that matters here. 0.5 to 12.2 percent slower, as slow as `w6`.
+
+So the loss is Goose's inlining of the loads, not the guards. clang inlines the
+non-`inline` loads too, and the C of each inlined load is the same as the function's;
+the double-fast matcher comes to 991 instructions at `e1a9800` and 1,004 in `w7`. A
+sampled profile of `x-ray` at level 3 puts the same lines on top in both (the `long`
+table's load and the 8- and 4-byte compares) with `w7`'s samples spread over more of
+the loop. What the unchecked C gains, Goose can't reach this way at this pin. The
+patches are `build/task005/zs/winidx.patch` (`w3`), `winidx-w6.patch`, and
+`inline-loads.patch` (`w7`).

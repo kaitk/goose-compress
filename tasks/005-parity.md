@@ -39,7 +39,12 @@ gzip up to 6 percent on `x-ray`
 ([history](../docs/results-history.md#task-005-zstds-own-match_len-at-d10dd61)). At
 `e1a9800`, pin `46356c2`, libzstd is 1.37 to 1.60 times faster at level 1 and 1.14 to
 1.29 at level 3 on six files, and klauspost 0.84 to 1.09 times the package's rate
-([results](../docs/results.md#zstd-levels-1-and-3-at-e1a9800)). Left for zstd:
+([results](../docs/results.md#zstd-levels-1-and-3-at-e1a9800)). Removing every check
+in the C of zstd's matchers gains 1.9 to 6.1 percent, but the Goose that drops the
+window reads' checks loses 2.7 to 12.1, because marking `load32` and `load64` `inline`
+costs as much on its own; not kept
+([history](../docs/results-history.md#task-005-zstds-window-reads-without-checks-not-kept)).
+Left for zstd:
 
 - The FSE steps and `put_seqs`, 14 percent at level 1 on `webster`; the literals'
   Huffman coding on `x-ray`, about 1.8 times libzstd's time a byte.
