@@ -36,11 +36,11 @@ stored), leave libzstd 1.45 to 1.74 times faster at level 1 and 1.22 to 1.37 at 
 whose std `ctz` and `clz` are instructions. `d10dd61` gives zstd its own `match_len`
 with one 8-byte load and `ctz`, +2.4 to +9.2 percent; either in the shared one cost
 gzip up to 6 percent on `x-ray`
-([history](../docs/results-history.md#task-005-zstds-own-match_len-at-d10dd61)). Left
-for zstd:
+([history](../docs/results-history.md#task-005-zstds-own-match_len-at-d10dd61)). At
+`e1a9800`, pin `46356c2`, libzstd is 1.37 to 1.60 times faster at level 1 and 1.14 to
+1.29 at level 3 on six files, and klauspost 0.84 to 1.09 times the package's rate
+([results](../docs/results.md#zstd-levels-1-and-3-at-e1a9800)). Left for zstd:
 
-- A full `FORMAT=zstd bench/run.sh` at the latest commit, for `docs/results.md` and the
-  README, which show `b396581`.
 - The FSE steps and `put_seqs`, 14 percent at level 1 on `webster`; the literals'
   Huffman coding on `x-ray`, about 1.8 times libzstd's time a byte.
 - The tables against the 512 KB L2: libzstd's level 1 hash table is 32 KB, the

@@ -317,6 +317,39 @@ Per file, and why DEFLATE keeps its own, in
 ### Goose `46356c2`
 
 2026-10-14: the pin moved from `0bdbd18` to `46356c2`. The tests pass, and `bench` at
-`d10dd61` writes the same output as with `0bdbd18`. Its rates at this pin are not yet
-measured. The compiler drops 584 of `bench`'s 862 index checks, against 560 of 851 at
-`a6249a4`; since then it also drops the check on `win[p - d]` after a guard ([findings](goose-findings.md#bounds-check-elimination-doesnt-combine-facts-about-a-difference)).
+`d10dd61` writes the same output as with `0bdbd18`. The compiler drops 584 of
+`bench`'s 862 index checks, against 560 of 851 at `a6249a4`; since then it also drops
+the check on `win[p - d]` after a guard ([findings](goose-findings.md#bounds-check-elimination-doesnt-combine-facts-about-a-difference)).
+
+`bench` at `e1a9800` built by `46356c2`, against `d10dd61` built by `0bdbd18` (the
+source differs only in a comment), in 3 alternating rounds of `bench LEVEL FILE 5`
+(`build/task005/ab.sh`), the median of the rounds' medians: gzip levels 1, 6, and 9
+-1.2 to +2.9 percent, zstd levels 1 and 3 -2.4 to +1.4. zstd on `webster` at level 1
+came out at -4.2 percent and at -1.5 in 5 rounds of its own, whose rates overlap. The
+pin moves no rate.
+
+### zstd levels 1 and 3 at `e1a9800`
+
+2026-10-14, task 005 step 5, Goose `46356c2`, measured as at
+[`8ec4538`](#zstd-levels-1-and-3-at-8ec4538): `FORMAT=zstd bench/run.sh`, 10 runs per
+cell, the median. The run went twice; each cell's medians agreed within 4.1 percent,
+except klauspost at level 1 on `dickens` (6.5), `libzstd-w17` at level 3 on `x-ray`
+(5.2), and klauspost at level 3 on `xml` (5.1). The table is the first. The output is
+the same as at `b396581`.
+
+| File | MB | Level 1 goose | libzstd | libzstd, 128 KB | klauspost | Level 3 goose | libzstd | libzstd, 128 KB | klauspost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 10.2 | 219.3 | 351.9 | 307.4 | 193.1 | 164.2 | 187.5 | 208.0 | 156.6 |
+| webster | 41.5 | 266.6 | 405.4 | 358.5 | 254.2 | 205.1 | 238.1 | 271.1 | 198.4 |
+| xml | 5.3 | 554.9 | 830.7 | 709.8 | 490.9 | 479.7 | 616.6 | 582.9 | 400.9 |
+| nci | 33.6 | 745.0 | 1,023.1 | 963.5 | 648.4 | 671.2 | 819.8 | 819.1 | 598.8 |
+| mozilla | 51.2 | 330.9 | 519.3 | 447.5 | 330.2 | 238.4 | 281.5 | 316.5 | 260.7 |
+| samba | 21.6 | 406.3 | 608.0 | 513.0 | 396.7 | 324.2 | 383.8 | 415.6 | 326.4 |
+| x-ray | 8.5 | 676.3 | 841.4 | 940.9 | 2,281.4 | 155.3 | 145.4 | 212.7 | 151.9 |
+
+At level 1, libzstd is 1.37 to 1.60 times faster on six files and 1.24 times on
+`x-ray`; klauspost's rate is 0.87 to 1.00 times the package's on six files, and 3.4
+times on `x-ray`. At level 3, libzstd is 1.14 to 1.29 times faster on six files, and
+the package 1.07 times faster on `x-ray`; klauspost's rate is 0.84 to 1.09 times the
+package's. Against libzstd at the package's 128 KB window, libzstd is 1.26 to 1.40
+times faster at level 1 and 1.22 to 1.37 at level 3.
