@@ -64,8 +64,9 @@ Level 1 follows libzstd's `ZSTD_fast` (`facebook/zstd`):
 - The two positions it hashes after a match, and the offset before last tried at once.
 - Blocks of at most 128 KB matched whole, as its streaming API buffers them.
 
-The 6-byte hash and the 2^15-entry table are klauspost's `enc_fast.go`
-(`klauspost/compress`).
+The 6-byte hash follows klauspost's `enc_fast.go` (`klauspost/compress`). Level 1
+uses 2^13 entries, following libzstd's table size for inputs up to 128 KB. The
+[architecture decision](architecture/README.md) records the rate and size trade-off.
 
 ### Level 3
 

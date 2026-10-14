@@ -7,7 +7,7 @@ Goose pin where they differ.
 
 ## Apple M1 Pro, macOS
 
-- MacBook Pro `MacBookPro18,3`, Apple M1 Pro (8 performance and 2 efficiency cores),
+- Apple M1 Pro (8 performance and 2 efficiency cores),
   macOS 26.3.1 (Darwin 25.3.0).
 - Goose `5c83a5a`, `goose build` defaults (`-O2`), with Apple clang 21.0.0
   (`clang-2100.0.123.102`).
@@ -163,7 +163,7 @@ dozen bytes is small beside a block of 16,384 symbols.
 bit writer, the 4-byte candidate check, and at levels 2 to 9 hash chains, lazy from
 level 5, with libdeflate's parameters. `LEVELS="1 6 9" bench/run.sh`: gzip output,
 one-shot, the whole file in memory, 10 runs per cell, same machine, compilers, and
-libraries as above. MB/s is the median of the 10 runs. Desktop apps ran beside it, at
+libraries as above. MB/s is the median of the 10 runs. Background load was
 a load average of 5.1 to 5.8, and no other benchmark.
 
 #### Level 1
@@ -246,8 +246,8 @@ three quarters of the 100-byte call in building the `Encoder`, zeroing and copyi
 its own and run against the build before it as `bench LEVEL FILE RUNS`, gzip, one-shot,
 in 3 alternating rounds on the same machine; a cell is the best of the 3 rounds'
 medians, in MB/s. `RUNS` was 5 until hash chains, 3 after. Two builds of the same code
-differed by under 1 percent. The machine ran a virtual machine and desktop apps
-throughout, at a load average of 5 to 7. Output sizes don't vary between runs; where a
+differed by under 1 percent. Background load average was 5 to 7 throughout.
+Output sizes don't vary between runs; where a
 change kept the bytes, only rates are shown.
 
 | Change | Level | dickens | mozilla | x-ray | xml | Kept |
@@ -344,8 +344,8 @@ files of four at both levels.
 2026-10-12, task 003, Goose `c38dc0f`, same machine, compilers, and libraries. Each
 change was built with `goose build` into a binary of its own and run against the build
 before it as `bench LEVEL FILE 3`, gzip, one-shot, in 3 alternating rounds; a cell is
-the best of the 3 rounds' medians, in MB/s. Desktop apps and another agent session ran
-beside it, at a load average of 3.9 to 7.2, and no other benchmark. Where a change kept
+the best of the 3 rounds' medians, in MB/s. Background load average was 3.9 to 7.2;
+no other benchmark ran. Where a change kept
 the bytes, only rates are shown.
 
 Where the time goes first, by `sample` (4 s each) and, for `search`, by `xctrace`'s Time
@@ -828,16 +828,15 @@ writing of sequences is 13, and counting and coding literals 11. At level 3 on
 
 ## AMD Ryzen 7 5800X3D, Windows
 
-- Desktop on an MSI `MS-7A34` board, AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,
+- AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,
   AVX2 and no AVX-512), 32 GB, Windows 11 Pro 10.0.26200.
 - Goose `c38dc0f`, `goose build` defaults: `clang-cl` 22.1.3 at `/O2`, from Visual
   Studio Build Tools 2026 (18). `simd fn`s get an AVX2 version.
 - libdeflate v1.26 and zlib-ng 2.3.3, CMake `Release` builds with Ninja and clang
   22.1.3 and their default options, which pick each CPU's fastest code at run time;
   `bench/ref.c` at `-O2`, same compiler.
-- Run from Git Bash. Docker Desktop, a WSL distribution, and desktop apps ran beside
-  the benchmarks, at about 13 percent CPU load before they started, and no other
-  benchmark.
+- Run from Git Bash. Background CPU load was about 13 percent before the benchmarks;
+  no other benchmark ran.
 
 ### Levels 0, 1, 6, and 9 at `540ae3c`
 
@@ -998,9 +997,7 @@ to 1.7 and 1.6 to 2.0 times; at level 9, up to 2.5 and 1.5 to 2.2 times.
 
 2026-10-13, task 005, package at `6b57c40`, Goose `a6249a4`, same machine, compilers,
 and libraries. No other benchmark or build ran during the runs below, CPU load was 2
-to 4 percent before each, and Docker Desktop, Firefox, and two idle agent sessions ran
-beside them. A run cut short when a build in another session overlapped it was
-discarded.
+to 4 percent before each. A run that overlapped another build was discarded.
 
 Each build ran as `bench LEVEL FILE 5`, gzip, one-shot, in 3 alternating rounds with
 the others on the 7 Silesia files; a cell is the median of the 3 rounds' medians, in
@@ -1286,7 +1283,7 @@ symbols, about 16 ms of the run against about 9 in libdeflate.
 ### zstd profile at `8ec4538`
 
 2026-10-13, task 005 step 5. The run against libzstd and klauspost is in
-[results.md](results.md#zstd-levels-1-and-3-at-8ec4538). Profiles from the in-process
+[results history](#zstd-levels-1-and-3-at-8ec4538). Profiles from the in-process
 sampler (a thread that records the main thread's instruction pointer every ~20 µs):
 the package's `goose build` C with the sampler, at `/O2` with debug info, `bench 1
 webster 15 zstd`; and libzstd v1.5.7 compiled from source with clang 22.1.3 at `-O3`
@@ -1385,7 +1382,8 @@ percent and counting them 22.
 - `64f7bc5` loads both of the offset code's candidates, `LOG2[v & 255]` and
   `8 + LOG2_HI[v >> 8]`, and selects one, where `log2_zstd` branched on `v >= 256`.
 
-Tried after `64f7bc5`, not yet kept: `load64` as one 8-byte slice, not two `load32`s.
+Tried after `64f7bc5`, not kept in the shared implementation: `load64` as one 8-byte
+slice, not two `load32`s.
 zstd gained 2.6 to 6.6 percent in every cell, but gzip lost 5.9 percent on `x-ray` at
 level 6 and 6.3 at level 9, in two runs. With `match_len` kept on two `load32`s, gzip
 was within noise and zstd kept a third of the gain, so most of both comes from
@@ -1560,3 +1558,184 @@ libzstd's size on four files of seven, where 2^15 is under it on five. Level 1 t
 2^13, libzstd's own, as the task's parity compares level by level (2026-10-14). Over
 the 12 Silesia files its output goes from 0.3378 of the input to 0.3498, against
 libzstd's 0.3455.
+
+### Levels 0, 1, 6, and 9 at `6b57c40`
+
+2026-10-13, task 005 step 1, package at `6b57c40`, Goose `a6249a4`, `clang-cl`
+22.1.3 at `/O2`, the baseline for task 005. On this
+machine it adds `d71eb59`, `1f1ed62`, and `865d359` to the last run, at `43cb937`
+([history](#levels-1-6-and-9-at-43cb937)).
+`LEVELS="0 1 6 9" bench/run.sh`: gzip output, one-shot, the whole file in memory, 10
+runs per cell; MB/s is the median of the 10. Sizes are each output's bytes against
+libdeflate's at the same level, from one run of `bench` and `ref`.
+
+The level-0 table remains in [latest results](results.md#level-0-at-6b57c40),
+since later changes leave that encoder unchanged.
+
+| File | Level 1 goose | size | zlib-ng | size | libdeflate | Level 6 goose | size | zlib-ng | size | libdeflate | Level 9 goose | size | zlib-ng | size | libdeflate |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 188.1 | +3.0% | 283.1 | +42.8% | 261.6 | 49.3 | +0.1% | 67.2 | +0.9% | 72.9 | 22.8 | +0.1% | 27.4 | +1.3% | 31.3 |
+| webster | 210.6 | +5.0% | 341.4 | +39.6% | 290.6 | 68.8 | +0.3% | 83.9 | +0.5% | 103.8 | 27.0 | +0.3% | 43.3 | +2.0% | 37.7 |
+| xml | 312.4 | +20.3% | 681.3 | +33.3% | 504.0 | 124.1 | +0.6% | 165.3 | -0.4% | 188.4 | 41.2 | +0.5% | 80.3 | +1.9% | 62.9 |
+| nci | 385.9 | +7.6% | 888.3 | +40.6% | 651.4 | 130.0 | +1.1% | 213.8 | +1.7% | 236.7 | 29.9 | +0.8% | 71.2 | +2.5% | 61.8 |
+| mozilla | 208.6 | +1.5% | 319.1 | +18.8% | 274.5 | 74.6 | +3.0% | 93.1 | +3.3% | 120.0 | 19.1 | +3.0% | 27.7 | +1.7% | 30.6 |
+| samba | 258.8 | +3.2% | 439.0 | +28.6% | 364.7 | 89.0 | +1.8% | 118.5 | +3.1% | 134.1 | 30.5 | +2.0% | 50.6 | +2.6% | 45.4 |
+| x-ray | 139.4 | +0.6% | 156.5 | +25.1% | 163.5 | 69.5 | +4.3% | 74.4 | +4.7% | 120.2 | 67.4 | +4.5% | 43.3 | -0.5% | 101.6 |
+
+Goose beats zlib-ng's rate on `x-ray` at level 9, 67.4 MB/s against 43.3, and loses
+every other rate. Against libdeflate it's 1.17 to 1.69 times slower at level 1, 1.48
+to 1.82 at level 6, and 1.37 to 2.07 at level 9, for output 0.6 to 20.3 percent
+larger at level 1 and 0.1 to 4.5 percent at levels 6 and 9. Against the `43cb937`
+run, a session earlier, level 1 is 2 to 9 percent faster, level 6 3 to 15 percent,
+and level 9 2 to 16 percent, most on `x-ray`. Level 0 is 4.9 to 7.0 times slower than
+both libraries: CRC-32 at 2.6 to 2.8 GB/s against their carryless multiply.
+
+Task 005's steps 2 and 3, `simd fn` and the hand-fixed C against libdeflate, are in
+[results-history.md](#task-005-steps-2-and-3-simd-fn-and-the-codegen-ceiling).
+
+### zstd levels 1 and 3 at `8ec4538`
+
+2026-10-13, task 005 step 5, package at `8ec4538`: zstd's first run on this machine.
+Against:
+
+- libzstd v1.5.7, a CMake `Release` build with Ninja and clang 22.1.3 (`-O3`) and its
+  default options, through `bench/ref.c` at `-O2`, same compiler: `ZSTD_compress2`
+  with `ZSTD_c_checksumFlag` on, at its own window for the input (512 KB at level 1, 2
+  MB at level 3), and as `libzstd-w17` at the package's 128 KB.
+- klauspost/compress v1.20.3, built by Go 1.27.0 with `go build` defaults, through
+  `bench/klauspost`: `EncodeAll` with `WithEncoderCRC(true)`, at `SpeedFastest` against
+  level 1 and `SpeedDefault` against level 3, with its default window.
+
+Every library writes the content checksum and compresses one-shot, the whole file in
+memory. Rate, MB/s, `FORMAT=zstd bench/run.sh`: 10 runs per cell, the median. The run
+went twice, at 1 percent CPU load before it; each cell's medians agreed within 3
+percent, except `libzstd-w17` at level 3 on `xml`, within 10.2. The table is the
+first. Output sizes are the same as the M1 Pro's
+([ratios](results.md#zstd-levels-1-and-3-at-237de3a)).
+
+| File | MB | Level 1 goose | libzstd | libzstd, 128 KB | klauspost | Level 3 goose | libzstd | libzstd, 128 KB | klauspost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 10.2 | 152.9 | 361.0 | 311.9 | 205.5 | 132.8 | 195.0 | 210.3 | 160.8 |
+| webster | 41.5 | 190.8 | 418.7 | 358.2 | 251.9 | 158.6 | 238.7 | 277.3 | 200.6 |
+| xml | 5.3 | 406.4 | 828.5 | 691.4 | 519.8 | 366.1 | 610.7 | 529.6 | 392.8 |
+| nci | 33.6 | 517.2 | 1,024.9 | 975.8 | 652.6 | 504.0 | 814.3 | 822.2 | 578.4 |
+| mozilla | 51.2 | 247.9 | 518.0 | 450.6 | 333.2 | 192.3 | 282.6 | 324.7 | 258.3 |
+| samba | 21.6 | 299.4 | 603.2 | 513.9 | 398.1 | 260.0 | 387.8 | 411.8 | 330.9 |
+| x-ray | 8.5 | 670.9 | 846.4 | 945.2 | 2,327.1 | 133.8 | 146.9 | 209.6 | 150.0 |
+
+The package loses every rate, by less than on the M1 Pro. At level 1, libzstd is 2.0
+to 2.4 times faster on six files and 1.26 times on `x-ray`; klauspost is 1.26 to 1.34
+times faster on six and 3.5 times on `x-ray`, whose literals it leaves raw. At level 3,
+libzstd is 1.47 to 1.67 times faster on six files and 1.10 times on `x-ray`;
+klauspost is 1.07 to 1.34 times. On `webster` at level 1, the coding after the matcher
+takes 3.8 times libzstd's time a byte and the matcher 1.5 times
+([profile](#zstd-profile-at-8ec4538)).
+
+### zstd levels 1 and 3 at `b396581`
+
+2026-10-13, task 005 step 5: three changes to the package's zstd coding, with the same
+output, measured as at `8ec4538`, one run.
+
+| File | Level 1 goose | libzstd | libzstd, 128 KB | klauspost | Level 3 goose | libzstd | libzstd, 128 KB | klauspost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 205.1 | 355.9 | 315.2 | 205.8 | 160.6 | 196.2 | 209.2 | 161.4 |
+| webster | 246.9 | 415.0 | 359.7 | 252.8 | 191.9 | 237.6 | 274.6 | 202.6 |
+| xml | 515.8 | 831.7 | 708.7 | 528.3 | 448.7 | 615.4 | 581.6 | 408.6 |
+| nci | 699.3 | 1,013.3 | 975.2 | 654.3 | 635.9 | 808.8 | 833.7 | 605.2 |
+| mozilla | 310.9 | 529.0 | 452.7 | 335.2 | 222.6 | 282.4 | 324.1 | 263.7 |
+| samba | 373.7 | 608.6 | 518.0 | 396.9 | 306.0 | 389.4 | 407.9 | 333.1 |
+| x-ray | 652.1 | 842.7 | 945.3 | 2,330.0 | 145.5 | 147.6 | 209.7 | 149.7 |
+
+At level 1, libzstd is 1.45 to 1.74 times faster on six files and 1.29 times on
+`x-ray`; klauspost's rate is 0.94 to 1.08 times the package's on six files, and 3.6
+times on `x-ray`. At level 3, libzstd is 1.22 to 1.37 times faster on six files and
+level on `x-ray`; klauspost's rate is 0.91 to 1.18 times the package's.
+
+Each change against the build before it, in 3 alternating rounds of `bench LEVEL FILE 5
+zstd` (`build/task005/ab.sh`), the median of the rounds' medians, per file in
+[results-history.md](#task-005-zstd-coding-changes-at-b396581):
+
+| Change | Level 1 | Level 3 | Kept |
+|---|---|---|---|
+| `3df4fe4`: hash tables indexed `% n`, 7 bounds checks dropped | -0.8% to +0.5% | -0.9% to +0.4% | yes, for the checks |
+| `b3f480f`: sequences written once, behind a bound on their bits | +2.8% to +5.0%, `x-ray` -1.6% | +2.5% to +4.9% | yes |
+| `b396581`: literals copied into one buffer as each sequence is stored | +18.8% to +27.1%, `x-ray` -0.4% | +5.9% to +20.7% | yes, at 131,072 more bytes |
+| `be26d4e`: sequence codes counted in `u8`-indexed tables, 7 bounds checks dropped | -1.1% to +0.8%, `x-ray` +3.8% | -0.9% to +0.2% | yes, for the checks |
+| `64f7bc5`: offset codes by a select between two table loads, not branches | +0.6% to +2.2%, `x-ray` -2.3% | +0.6% to +3.3% | yes |
+
+`x-ray` at level 1 moves 2 to 4 percent either way between builds, in its literals'
+Huffman coding, which none of these changes touch.
+
+### Goose `0bdbd18`
+
+2026-10-13: the pin moved from `a6249a4` to `0bdbd18`. The package at `64f7bc5`, built
+by each compiler, writes the same output, and in 3 alternating rounds of `bench LEVEL
+FILE 5` every cell is within 1.9 percent: gzip levels 1, 6, and 9 -1.2 to +1.2
+percent, zstd levels 1 and 3 -1.4 to +1.9. The results above stand for `0bdbd18`.
+
+### Goose `46356c2`
+
+2026-10-14: the pin moved from `0bdbd18` to `46356c2`. The tests pass, and `bench` at
+`d10dd61` writes the same output as with `0bdbd18`. The compiler drops 584 of
+`bench`'s 862 index checks, against 560 of 851 at `a6249a4`; since then it also drops
+the check on `win[p - d]` after a guard.
+
+`bench` at `e1a9800` built by `46356c2`, against `d10dd61` built by `0bdbd18` (the
+source differs only in a comment), in 3 alternating rounds of `bench LEVEL FILE 5`
+(`build/task005/ab.sh`), the median of the rounds' medians: gzip levels 1, 6, and 9
+-1.2 to +2.9 percent, zstd levels 1 and 3 -2.4 to +1.4. zstd on `webster` at level 1
+came out at -4.2 percent and at -1.5 in 5 rounds of its own, whose rates overlap. The
+pin moves no rate.
+
+### zstd levels 1 and 3 at `e1a9800`
+
+2026-10-14, task 005 step 5, Goose `46356c2`, measured as at
+[`8ec4538`](#zstd-levels-1-and-3-at-8ec4538): `FORMAT=zstd bench/run.sh`, 10 runs per
+cell, the median. The run went twice; each cell's medians agreed within 4.1 percent,
+except klauspost at level 1 on `dickens` (6.5), `libzstd-w17` at level 3 on `x-ray`
+(5.2), and klauspost at level 3 on `xml` (5.1). The table is the first. The output is
+the same as at `b396581`.
+
+| File | MB | Level 1 goose | libzstd | libzstd, 128 KB | klauspost | Level 3 goose | libzstd | libzstd, 128 KB | klauspost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 10.2 | 219.3 | 351.9 | 307.4 | 193.1 | 164.2 | 187.5 | 208.0 | 156.6 |
+| webster | 41.5 | 266.6 | 405.4 | 358.5 | 254.2 | 205.1 | 238.1 | 271.1 | 198.4 |
+| xml | 5.3 | 554.9 | 830.7 | 709.8 | 490.9 | 479.7 | 616.6 | 582.9 | 400.9 |
+| nci | 33.6 | 745.0 | 1,023.1 | 963.5 | 648.4 | 671.2 | 819.8 | 819.1 | 598.8 |
+| mozilla | 51.2 | 330.9 | 519.3 | 447.5 | 330.2 | 238.4 | 281.5 | 316.5 | 260.7 |
+| samba | 21.6 | 406.3 | 608.0 | 513.0 | 396.7 | 324.2 | 383.8 | 415.6 | 326.4 |
+| x-ray | 8.5 | 676.3 | 841.4 | 940.9 | 2,281.4 | 155.3 | 145.4 | 212.7 | 151.9 |
+
+At level 1, libzstd is 1.37 to 1.60 times faster on six files and 1.24 times on
+`x-ray`; klauspost's rate is 0.87 to 1.00 times the package's on six files, and 3.4
+times on `x-ray`. At level 3, libzstd is 1.14 to 1.29 times faster on six files, and
+the package 1.07 times faster on `x-ray`; klauspost's rate is 0.84 to 1.09 times the
+package's. Against libzstd at the package's 128 KB window, libzstd is 1.26 to 1.40
+times faster at level 1 and 1.22 to 1.37 at level 3.
+
+### zstd levels 1 and 3 at `257090f`
+
+2026-10-14, task 005 step 5, Goose `46356c2`, after `b0199ba` (literals coded four at
+a time) and `257090f` (a sequence's bits in one flush)
+([history](#task-005-zstds-literals-and-sequences-at-257090f)),
+measured as at [`e1a9800`](#zstd-levels-1-and-3-at-e1a9800). The run went twice; each
+cell's medians agreed within 2.3 percent, except klauspost's: within 14.2 at level 3 on
+`xml`, 12.6 at level 1 on `x-ray`, and 5.6 or less elsewhere. The table is the first.
+The output is the same as at `b396581`.
+
+| File | MB | Level 1 goose | libzstd | libzstd, 128 KB | klauspost | Level 3 goose | libzstd | libzstd, 128 KB | klauspost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 10.2 | 227.8 | 358.4 | 313.0 | 207.3 | 175.7 | 195.9 | 212.7 | 165.5 |
+| webster | 41.5 | 273.3 | 415.7 | 357.8 | 254.2 | 210.5 | 240.8 | 277.5 | 202.9 |
+| xml | 5.3 | 565.1 | 829.7 | 710.2 | 531.5 | 488.7 | 614.6 | 580.4 | 421.0 |
+| nci | 33.6 | 754.2 | 1,007.5 | 976.7 | 656.2 | 682.6 | 811.8 | 815.8 | 601.2 |
+| mozilla | 51.2 | 339.9 | 525.0 | 448.1 | 336.3 | 240.5 | 284.8 | 322.4 | 264.2 |
+| samba | 21.6 | 418.3 | 607.8 | 519.4 | 418.6 | 335.2 | 383.1 | 413.6 | 345.3 |
+| x-ray | 8.5 | 710.6 | 841.5 | 939.3 | 2,301.6 | 160.1 | 148.1 | 213.1 | 151.2 |
+
+At level 1, libzstd is 1.34 to 1.57 times faster on six files and 1.18 times on
+`x-ray`; klauspost's rate is 0.87 to 1.00 times the package's on six files, and 3.2
+times on `x-ray`. At level 3, libzstd is 1.11 to 1.26 times faster on six files, and
+the package 1.08 times faster on `x-ray`; klauspost's rate is 0.86 to 1.10 times the
+package's. Against libzstd at the package's 128 KB window, libzstd is 1.24 to 1.37
+times faster at level 1 and 1.19 to 1.34 at level 3.

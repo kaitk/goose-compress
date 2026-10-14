@@ -18,10 +18,10 @@ and each block's literals and sequences are coded with tables chosen for it.
 
 | | Encoding | Notes |
 |---|---|---|
-| 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.05 to 1.7 times slower than zlib-ng and libdeflate at levels 1 and 6 on an M1 Pro. On a Ryzen, 0.56 to 0.66 of libdeflate's rate at level 1 for the same output size, 0.74 to 0.88 at level 6, and 0.85 to 1.12 at level 9 ([results](docs/results.md)); speed is still being tuned. |
+| 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. See [benchmarks](#benchmarks) for measured rates and output sizes. |
 | 🟢 | zlib (HTTP's `deflate`) | The same DEFLATE stream as gzip, with the zlib header and Adler-32. |
 | 🟢 | Raw DEFLATE | The same stream with no wrapper. |
-| 🟢 | zstd | Levels 1 and 3, libzstd's fast and double-fast matchers, into compressed blocks with Huffman literals and FSE tables chosen per block; levels 2 and up run level 3. Silesia comes to 0.3498 of its size at level 1 and 0.3251 at level 3, against libzstd's 0.3455 and 0.3121. 2.0 to 3.2 times slower than libzstd and 1.6 to 1.9 times slower than klauspost/compress on six files of seven, on an M1 Pro ([results](docs/results.md#zstd-levels-1-and-3-at-237de3a)); speed is still being improved. |
+| 🟢 | zstd | Levels 1 and 3, libzstd's fast and double-fast matchers, with Huffman literals and FSE tables chosen per block; levels 2 to 22 run level 3. See [benchmarks](#benchmarks) for measured rates and output sizes. |
 | 🔴 | Brotli | Out of scope: HTTP servers serve it precompressed (task 002). |
 | 🔴 | Decoding | Out of scope for now. |
 
@@ -68,7 +68,8 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
 
 - **Formats**: `compress::GZIP` (RFC 1952), `compress::ZLIB` (RFC 1950, HTTP's
   `deflate`), `compress::RAW` (RFC 1951 alone), and `compress::ZSTD` (RFC 8878).
-- **Levels**: 0 stores; 1 to 9 compress, each smaller and slower than the one before,
+- **DEFLATE levels**: 0 stores; 1 to 9 compress, with higher levels searching more
+  candidates and using lazy matching from level 5,
   and `compress::DEFAULT_LEVEL` is 6, as zlib's. Each block is coded with a dynamic
   Huffman code, the fixed code, or stored, whichever is shortest, so incompressible
   input grows by about 5 bytes every 16 KB.
@@ -99,8 +100,7 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
   - Matches reach back 32,768 bytes, across writes and flushes.
 - **`compress::zstd_encoder(level = 3)`**: a zstd stream, `compress::ZstdEncoder`,
   with zstd's levels 1 to 22. Level 1 runs libzstd's fast matcher, and 2 and up its
-  double-fast one, level 3's, which writes 3.8 percent less on Silesia, and is 2 to
-  24 percent slower on six of seven files and 80 percent slower on `x-ray`. Each
+  double-fast one, level 3. Each
   block's literals are Huffman coded from its counts, RLE, or raw, whichever is
   shortest, and its sequences' three kinds of codes each coded with an FSE table
   built from the block's counts, the predefined table, an RLE table, or the last
@@ -118,8 +118,8 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
   11 KB of FSE tables. Its
   `reset` clears nothing large: a stream starts out of the hash tables' reach, and
   they're cleared after 2 GB of streams, counting 128 KB more for each
-  ([architecture](docs/architecture/README.md)). `compress` of 100 bytes takes 2.5 µs at
-  level 1 and 2.6 µs at level 3 on an M1 Pro.
+  ([architecture](docs/architecture/README.md)). When the one-shot `compress` level is
+  omitted, its default of 6 selects zstd's level-3 matcher.
 - **`compress::crc32(crc, data)`** and **`compress::adler32(adler, data)`**: the
   checksums, continuing from a previous value. Start CRC-32 at 0 and Adler-32 at 1.
   **`compress::xxh64(data)`** is XXH64 with seed 0; `compress::Xxh64 { .. }`,
@@ -144,15 +144,13 @@ gzip on a Ryzen 7 5800X3D under Windows 11, at `8ec4538`, over seven Silesia fil
 [^1]: One-shot, the whole file in memory; a cell gives the range over the seven files.
     Levels 1, 6, and 9 are each file's median of 3 alternating rounds of 5 runs at
     `8ec4538`, zlib-ng's from the same kind of run at `24ac46b` (level 1) and
-    `9f7a539`; level 0 the median of 10 runs at `6b57c40`, unchanged since. DEFLATE
-    speed is still being tuned: task 005 ([tasks/005-parity.md](tasks/005-parity.md))
-    ports libdeflate's matchers and works on the code Goose generates, and these
-    numbers will change with it. Level 9 is at libdeflate's rate, or faster, on six
+    `9f7a539`; level 0 the median of 10 runs at `6b57c40`, unchanged since.
+    Level 9 is within 1 percent of libdeflate's rate, or faster, on six
     files of seven; level 1 writes libdeflate's sizes but runs at 0.56 to 0.66 of its
     rate.
 [^2]: The level 0 gap is CRC-32, which both libraries compute with a carryless multiply
     that Goose can't express
-    ([findings](docs/goose-findings.md#goose-has-no-carryless-multiply)).
+    (see the compiler findings linked below).
 
 zstd on the same Ryzen, at `7a96425`, against libzstd v1.5.7 and klauspost/compress
 v1.20.3, all with the checksum, over the same seven files[^3]:
@@ -163,10 +161,13 @@ v1.20.3, all with the checksum, over the same seven files[^3]:
 | 3 | 160–680 MB/s | 140–820 MB/s | 150–570 MB/s | 0.79–1.09 | +2.5% to +12.8%[^4] |
 
 [^3]: The median of 10 runs. klauspost's 2,220 MB/s is `x-ray`, whose literals it
-    leaves raw; on the other six files it's at most 640 MB/s. zstd's speed is still
-    being tuned ([tasks/005-parity.md](tasks/005-parity.md)).
+    leaves raw; on the other six files it's at most 640 MB/s.
 [^4]: libzstd's level 3 window is 2 MB, the package's 128 KB. Against libzstd at 128 KB,
     the package's output is 5.8 percent smaller to 0.4 percent larger.
+
+The [compiler findings](docs/goose-findings.md#goose-has-no-carryless-multiply)
+explain the CRC-32 limitation. Further performance work is tracked in
+[task 005](tasks/005-parity.md).
 
 ## Credits
 

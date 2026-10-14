@@ -29,8 +29,8 @@ Short description of what and why.
 ```
 
 Update the status line as work progresses; tick criteria as they are met. A cancelled task
-says who cancelled it, when, and why. A task that measures something records the numbers
-in its own file, with how they were measured.
+says when it was cancelled and why. A task that measures something links to the
+numbers and their method in `docs/results.md` or `docs/results-history.md`.
 
 ## Archive
 
@@ -39,12 +39,14 @@ When a task is done and nothing still builds on its file, move it to `000-archiv
 unique across both folders: pick the next number after the highest in either. Refer to
 tasks by number ("task 001"), not by path, so a move breaks no reference.
 
+Archived tasks describe the implementation at completion. Use the README and
+architecture doc for current behavior, and results for the latest measurements.
+
 ## Order
 
-Task 001 is the DEFLATE encoder with the gzip and zlib wrappers, goose-http's task
-022.02, in steps that each give valid output; goose-http can build against step 1.
-zstd, task 004, followed once task 001 was measured, and is done; its speed, 2 to 3
-times slower than libzstd's, is still being improved. Task 003 takes the DEFLATE
-encoder's speed past task 001's. Task 005 takes it to parity with the C libraries on
-the Ryzen, or decides to proxy to them. Task 002, brotli, waits on
-a measurement that shows it's needed.
+Tasks 001 (gzip and zlib) and 004 (zstd) are done and in `000-archive/`.
+Task 003 records the earlier DEFLATE tuning; task 005 continues that work for both
+DEFLATE and zstd on the Ryzen, aiming for parity with the C libraries or a decision
+to proxy to them. Task 002, brotli, waits
+on a measurement that shows it's needed. See the [latest results](../docs/results.md)
+for the measured gaps.

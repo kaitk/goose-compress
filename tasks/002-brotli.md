@@ -3,29 +3,21 @@
 Status: todo (a possible follow-up, not started until a measurement asks for it;
 recorded 2026-10-12)
 
-Brotli encoding on the fly is out of scope (`docs/architecture/README.md`). This task
-records why, and what would bring it back.
+Brotli encoding on the fly is out of scope. This task records what would justify
+adding it; the decision is in [architecture](../docs/architecture/README.md).
 
 ## Why it's out
 
-- Brotli's advantage over gzip comes mostly at qualities 9 to 11, which take tens of
-  milliseconds or more per response. That suits files compressed ahead of time, and
-  goose-http's `open_precompressed` already serves `.br` copies.
-- At its fast qualities (0 to 4), brotli is about as fast as gzip at level 6 and a
-  little smaller. That still needs a second encoder, with its own block format and
-  context modeling: a few thousand lines even without the built-in dictionary, none of
-  which helps zstd.
-- zstd covers the same ground: faster or smaller than gzip, cheaper to encode quickly,
-  and planned for this package after gzip.
-- Nothing measured needs it. HttpArena accepts gzip or br, and gzip is required anyway.
+HTTP servers can serve Brotli files compressed ahead of time; goose-http's
+`open_precompressed` already serves `.br` copies. Dynamic responses can use gzip
+or the implemented zstd encoder. Brotli would add a separate block format and
+context model, and no deployment measurement here establishes a need for it.
 
 ## What would bring it back
 
-A browser that takes `br` but not `zstd` gets gzip on dynamic responses, where nginx
-with its brotli module would send `br`: a few percent larger on small JSON, more on
-large HTML or JavaScript. Safari's zstd support wasn't checked on 2026-10-12. Start
-this task if a measurement shows the gap matters to a deployment: Safari still lacks
-zstd, and the deployment serves large dynamic text to browsers.
+Measure the response-size gap for a deployment whose clients accept `br` but cannot
+use `zstd`, especially for large dynamic text. Check browser support at the time of
+the measurement; this task does not maintain a browser compatibility table.
 
 ## Acceptance criteria
 

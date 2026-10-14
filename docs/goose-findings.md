@@ -117,7 +117,7 @@ Found on `5c83a5a`, task 001. Status: open; unchanged on `46356c2`
 CRC-32 runs at 2.6 to 2.8 GB/s on a Ryzen 7 5800X3D, slice-by-16 table lookups.
 libdeflate and zlib-ng fold the CRC with a carryless multiply (`PCLMULQDQ` on x86-64,
 `PMULL` on arm64), at 13 to 19 GB/s with the copy included
-([results](results.md#levels-0-1-6-and-9-at-6b57c40)). Goose has no such operation, and
+([results](results.md#level-0-at-6b57c40)). Goose has no such operation, and
 no way to ask for one: `simd fn` builds wider versions on x86-64 only (spec §7.12), and
 C compilers don't turn a CRC loop into carryless multiplies. Expected: a carryless
 multiply, or a CRC-32 in the stdlib that uses one where the CPU has it.

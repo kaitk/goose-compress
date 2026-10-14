@@ -1,7 +1,7 @@
 # Architecture
 
-Decisions for the package. Each says when it was decided. A proposed decision stands
-until the task named beside it confirms or replaces it.
+Current design decisions, their reasons, and the relevant trade-offs. Measurements
+are recorded in [results history](../results-history.md).
 
 ## Settled
 
@@ -27,9 +27,9 @@ until the task named beside it confirms or replaces it.
   `flush` ends the output on a byte boundary with an empty stored block, as zlib's
   `Z_SYNC_FLUSH` does, so each chunk of a streamed response or SSE event decompresses
   whole on arrival (2026-10-12).
-- **gzip and zlib first, zstd later, no brotli.** gzip and zlib/deflate share one
-  DEFLATE stream. zstd joins the same package once gzip is measured, which it now is
-  (task 004, 2026-10-12). Brotli is out:
+- **gzip, zlib, raw DEFLATE, and zstd; no brotli.** gzip and zlib share one
+  DEFLATE stream; zstd has its own encoder (task 004, completed 2026-10-13).
+  Brotli is out:
   HTTP servers serve it as precompressed files, which goose-http already does
   (2026-10-12). Task 002 says what would bring it back.
 - **The encoder is a fixed-size value.** `Encoder` holds its state inline, with no
@@ -42,12 +42,11 @@ until the task named beside it confirms or replaces it.
   ([findings](../goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)).
   `compress` resets one encoder that each program instance builds at its first call
   and keeps, held in a resizable global: a global `Encoder`, whose address clang
-  knows, made level 6 2 to 7 percent slower on the Ryzen. A 100-byte `compress` went
-  from 108 to 7.3 µs on the Ryzen under Windows, for 459,122 bytes held for the
-  program's life (task 003, 2026-10-12).
+  knows, made level 6 2 to 7 percent slower on the Ryzen
+  ([measurement](../results-history.md#small-inputs-2), task 003, 2026-10-12).
 - **A stream holds 460,406 bytes**, whatever its level: a window of 65,800 bytes, a
   hash table of 262,144, hash chains of 65,536, a block of symbols of 65,536, and
-  the block's symbol counts, 1,264.
+  the block's symbol counts, 1,264, plus scalar state.
   Level 0 keeps its pending input in the window, and level 1 leaves the chains unused.
   zlib's defaults take 256 KB and a few more, by its own formula. The chains added 65,566 bytes to step 2's
   262,484 (task 001 step 4, 2026-10-12), the larger hash table 131,072 more, and
@@ -60,8 +59,8 @@ until the task named beside it confirms or replaces it.
   positions a lazy level looks ahead, the longest match, and the 4 bytes hashed at its
   last position, so a match never depends on how much input a write brought. A flush
   or finish matches to the end of the input (task 001 steps 2 and 4, 2026-10-12).
-- **The hash table holds stream offsets, not window positions.** It's 2^16 `u32`
-  entries, as libdeflate's chains use, of each bucket's latest offset modulo 2^32,
+- **The hash table holds stream offsets, not window positions.** From level 2 it uses
+  2^16 `u32` entries, as libdeflate's chains use, of each bucket's latest offset modulo 2^32,
   hashed from 4 bytes. Every candidate is compared, so an entry that is stale or from
   4 GB back costs a probe and never gives a wrong match, and a slide rewrites nothing.
   zlib's table of `u16` window positions takes half the memory but is rewritten at
@@ -102,10 +101,11 @@ until the task named beside it confirms or replaces it.
   9.0 percent faster on the Ryzen, most on `nci` (task 005, 2026-10-13). With `ctz`
   in its place it was 4 to 26 percent slower (task 001 step 4, task 005 step 2).
 - **Length and distance codes, and a distance's logarithm for lazy matching, come from
-  tables built once,** not from std's `clz`. On the M1 Pro the tables were within the
-  noise of `clz`, which Apple clang makes one instruction; on the Ryzen, where clang
-  leaves `clz` a loop, they made level 1 1.2 to 2.1 times faster and levels 6 and 9 9 to
-  27 percent faster (task 003, 2026-10-12).
+  tables built once.** When this was measured, std's `clz` compiled to a loop on
+  x86-64; the tables made level 1 1.2 to 2.1 times faster on the Ryzen and levels 6
+  and 9 9 to 27 percent faster. Goose `0bdbd18` and the current pin provide bit-scan
+  instructions; the package retains the measured table implementation (task 003,
+  2026-10-12).
 - **A block is held as symbols, then coded whole.** A block ends at 16,384 symbols, at
   a slide that would drop its first bytes, and at a flush or finish. Holding the block
   lets its header carry the final-block bit and gives the symbol counts its dynamic
@@ -155,19 +155,12 @@ until the task named beside it confirms or replaces it.
   | Level | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
   |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
   | Search | 2-entry bucket | greedy | greedy | greedy | lazy | lazy | lazy | lazy2 | lazy2 |
-  | Depth | 1 | 6 | 12 | 16 | 16 | 35 | 100 | 300 | 600 |
-  | Nice length | 258 | 10 | 14 | 30 | 30 | 65 | 130 | 258 | 258 |
+  | Maximum candidates | 2 | 6 | 12 | 16 | 16 | 35 | 100 | 300 | 600 |
+  | Nice length | 32 | 10 | 14 | 30 | 30 | 65 | 130 | 258 | 258 |
 - **A match found ahead is held across writes.** When a lazy level takes the match
   one or two positions on, it keeps it in the stream until that position is matched,
   which may be in the next write. With the lookahead, this keeps a stream's bytes
   independent of how its input was split (task 001 step 4, 2026-10-12).
-- **Building a stream is most of what a small input costs**, which the package can't
-  avoid at the pin: `compress` takes 24 µs for 100 bytes on an M1 Pro, at level 1 or
-  6, because the compiler builds an `Encoder` through temporaries, zeroing it and
-  copying it whole three times
-  ([findings](../goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)).
-  Limited arrays, whose slots aren't zeroed, were slower still (task 001 step 4,
-  2026-10-12).
 - **Bits go out 8 bytes at a time.** Between calls the writer holds fewer than 32
   bits and appends 32 at once. A block's symbols are coded into a 4 KB buffer on the
   stack, 8 bytes stored per symbol, and appended to the output as it fills; growing
@@ -239,8 +232,8 @@ until the task named beside it confirms or replaces it.
   level 3's short table, so the encoder's size is the same (task 005, 2026-10-14,
   [results](../results-history.md#level-1s-hash-table-against-the-l2)).
 - **zstd's level 3 is libzstd's `ZSTD_dfast`, with libzstd's parameters for inputs up
-  to 128 KB**: a table of 2^16 stream offsets hashed from 8 bytes, beside level 1's
-  table of 2^15, here hashed from 5. Each position checks the last offset one position
+  to 128 KB**: a table of 2^16 stream offsets hashed from 8 bytes and a table of
+  2^15 offsets hashed from 5. Each position checks the last offset one position
   on, then the long match, then the short one, which gives way to a longer long match
   at the next position. Silesia's output went from level 1's 0.3378 of its input to
   0.3251, against `zstd -3`'s 0.3124 with its 2 MB window and 0.3335 with a 128 KB one
@@ -248,8 +241,8 @@ until the task named beside it confirms or replaces it.
   and 80 percent slower on `x-ray`, where libzstd's level 3 is 70 percent slower than
   its level 1 with one thread (step 6). A 2^17-entry long table, libzstd's for larger
   inputs, made the output 0.15 percent smaller for 256 KB more; a 6-byte short hash
-  made it 2.0 percent larger, and a 4-byte one left it the same as 5. The long table adds 262,144 bytes, for a
-  `ZstdEncoder` of 879,875 (task 004 step 5, 2026-10-13,
+  made it 2.0 percent larger, and a 4-byte one left it the same as 5 (task 004 step 5,
+  2026-10-13,
   [results](../results-history.md#zstd-level-3-task-004-step-5)).
 - **A zstd `reset` keeps the hash tables.** Each stream's offsets start a window past
   the last stream's end, so no entry from before is in reach, and a new encoder's start
@@ -258,13 +251,10 @@ until the task named beside it confirms or replaces it.
   for a stream's first 2 GB, as far as the tables' 32-bit offsets go without wrapping
   in either. Clearing level 3's 384 KB of tables at every reset made `compress` of 100
   bytes take 6.2 µs, against 2.6 µs without (task 004 step 5, 2026-10-13).
-- **zstd's levels, 1 to 22, each run the nearest level built**: level 1 the fast
-  matcher, and 2 and up the double-fast, level 3, as libzstd's level 2 does for inputs
-  up to 256 KB. Higher levels wait on a measurement (task 004, 2026-10-12; level 3
-  measured in step 5, 2026-10-13). Measured against libzstd and klauspost/compress in
-  step 6 (2026-10-13), the levels stand: level 3 writes 3.8 percent less than level 1,
-  as libzstd's writes 9.7 percent less and klauspost's SpeedDefault 8.5 percent less
-  than SpeedFastest, each with a larger window.
+- **zstd accepts levels 1 to 22, with two implemented matchers.** Level 1 uses the
+  fast matcher; levels 2 to 22 use the double-fast matcher, level 3. The stream's
+  default is 3. Higher levels need separate implementations and measurements
+  (task 004, 2026-10-13).
 - **Repeat offsets are resolved when a block is coded**, from the offsets a decoder
   holds after the last compressed block. The matcher keeps distances and its own last
   two offsets; a block written raw leaves the decoder's offsets as they were, as RFC
@@ -283,11 +273,13 @@ until the task named beside it confirms or replaces it.
   literals alone is compressed too. Silesia's output went from 0.4246 of its input to
   0.3768, against `zstd -1`'s 0.3457, for 17 to 22 percent of the rate (task 004 step
   3, 2026-10-13, [results](../results-history.md#zstd-huffman-literals-task-004-step-3)).
-- **Each zstd literal stream's counts are kept apart** while the literals are counted,
-  so the four streams' sizes for the jump table are known before any is written, and
-  no buffer of literals or coded bytes is held: each stream is written by walking the
-  sequences back from where it ends. A literals buffer would add 128 KB to each
-  `ZstdEncoder` (task 004 step 3, 2026-10-13).
+- **zstd literals are copied into a contiguous 128 KB buffer as sequences are stored.**
+  Each Huffman stream's counts are kept separately, so its size is known before any
+  stream is written. The buffer avoids walking sequences again to count and write
+  literals. It adds 131,072 bytes to the encoder, for a total of 1,010,955 bytes at
+  every level; the measured rate gain justified the memory cost
+  ([measurement](../results-history.md#task-005-zstd-coding-changes-at-b396581),
+  task 005, 2026-10-13).
 - **Each kind of zstd sequence code takes the table its block codes in the fewest
   bits**: one built from the block's counts, the predefined one, an RLE table for one
   code, or the last block's repeated. Each is priced at log2(2^accuracy / probability)
@@ -307,9 +299,3 @@ until the task named beside it confirms or replaces it.
   take 54 KB a table at that accuracy. Each sequence's three codes are kept, 48 KB,
   so they're computed once for counting, sizing, and writing (task 004 step 4,
   2026-10-13).
-
-## Proposed
-
-- **DEFLATE in steps that each give valid output** (task 001): stored blocks, then LZ77
-  with fixed Huffman tables, then dynamic tables, then speed. Each step keeps the API.
-  All four steps are done (2026-10-12).

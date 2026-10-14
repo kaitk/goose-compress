@@ -113,7 +113,7 @@ percent smaller for 24 and 71 percent more memory. On the M1 Pro, the 12 Silesia
 come to 0.4246 of their size, against 0.4127 from `zstd -1 --no-compress-literals`
 and 0.3457 from `zstd -1`. Rates are 169 to 560 MB/s on six of seven files, and 2.3
 GB/s on `x-ray`, against step 1's 8.7 GB/s copy
-([results](../docs/results-history.md#zstd-level-1-task-004-step-2)).
+([results](../../docs/results-history.md#zstd-level-1-task-004-step-2)).
 `scripts/roundtrip.py` holds each input to a zstd size limit, with inputs at the
 window's edge and one that fills a block's 16,384 sequences. The unit tests check the
 exact bytes of two compressed blocks, the second using a repeat offset.
@@ -129,7 +129,7 @@ Silesia files come to 0.3768 of their size, from step 2's 0.4246, against `zstd 
 0.3457; on `x-ray`, nearly all literals, within 0.1 percent of libzstd. Rates fell 17
 to 22 percent on six of seven files, to 134 to 459 MB/s, and `x-ray` went from 2.3
 GB/s, a copy, to 596 MB/s. `compress` of 100 bytes takes 3.5 µs, from 1.3
-([results](../docs/results-history.md#zstd-huffman-literals-task-004-step-3)).
+([results](../../docs/results-history.md#zstd-huffman-literals-task-004-step-3)).
 `scripts/roundtrip.py` adds skewed bytes of nearly every value, which take 11-bit codes
 and FSE-coded weights, and holds text, JSON, and the other inputs with literals to
 tighter zstd limits. A unit test checks the exact bytes of a block of Huffman literals.
@@ -145,7 +145,7 @@ no table to repeat. Tables are now in libzstd's coding form, which the Huffman w
 use too. On the M1 Pro, the 12 Silesia files come to 0.3378 of their size, from step
 3's 0.3768, below `zstd -1`'s 0.3457. Rates are within 2 percent of step 3's, inside
 the rounds' spread, and `compress` of 1,000 bytes takes 7.8 µs, from 7.1
-([results](../docs/results-history.md#zstd-fse-tables-per-block-task-004-step-4)).
+([results](../../docs/results-history.md#zstd-fse-tables-per-block-task-004-step-4)).
 `scripts/roundtrip.py` adds 440,000 bytes whose statistics change between blocks, and
 reads back its frames: one-shot, blocks build tables; flushed every 1,000 bytes, they
 repeat them; and the two take all four modes. Fuzz runs of seeds 1 to 3 with 2,000
@@ -170,7 +170,7 @@ level 1's 0.3378, against `zstd -3`'s 0.3124 with its 2 MB window and 0.3335 wit
 109 to 421 MB/s, and 80 percent slower on `x-ray`, 120 MB/s, as libzstd's level 3 is
 84 percent slower there than its level 1. Level 1's rates are within the rounds'
 spread of step 4's
-([results](../docs/results-history.md#zstd-level-3-task-004-step-5)).
+([results](../../docs/results-history.md#zstd-level-3-task-004-step-5)).
 
 `scripts/roundtrip.py` gives level 3 its own zstd limits: tighter on text, the copies,
 short matches, and the changing input, and looser on the JSON, where level 3 does
@@ -190,7 +190,7 @@ bench/run.sh` runs all of them at levels 1 and 3. Go in `bench/` is a new decisi
 recorded in the architecture doc and `AGENTS.md`.
 
 On the M1 Pro, the package loses every rate
-([results](../docs/results.md#zstd-levels-1-and-3-at-237de3a)). At level 1, libzstd is
+([results](../../docs/results.md#zstd-levels-1-and-3-at-237de3a)). At level 1, libzstd is
 2.3 to 3.2 times faster on six of seven files and klauspost 1.6 to 1.7 times; on
 `x-ray`, 1.2 and 3.8 times. At level 3, libzstd is 2.0 to 2.3 times faster on six
 files and 1.7 on `x-ray`, and klauspost 1.4 to 1.9 times. The 12 Silesia files come to
@@ -201,6 +201,6 @@ than libzstd's 0.3326 with the same 128 KB window.
 Step 5's `zstd -b` rates, which made libzstd's level 1 look 5 times faster, were
 multithreaded: the zstd command line uses worker threads by default. On `webster` at
 level 1, the package's matcher takes 2.1 times libzstd's time a byte, and the coding
-after it 4.3 times ([profile](../docs/results-history.md#zstd-against-libzstd-and-klauspost-task-004-step-6)).
+after it 4.3 times ([profile](../../docs/results-history.md#zstd-against-libzstd-and-klauspost-task-004-step-6)).
 Nothing was optimized in this step. The traps steps 1 to 6 added to
 `docs/development.md` are the spec's defined behavior (§6.2, §7.2), not findings.
