@@ -47,6 +47,8 @@ costs as much on its own; not kept
 `b0199ba` codes literals four at a time (+5.2 percent on `x-ray` at level 1) and
 `257090f` flushes a sequence's bits once (+0.4 to +3.3 percent)
 ([history](../docs/results-history.md#task-005-zstds-literals-and-sequences-at-257090f)).
+At `257090f`, libzstd is 1.34 to 1.57 times faster at level 1 and 1.11 to 1.26 at level
+3 on six files ([results](../docs/results.md#zstd-levels-1-and-3-at-257090f)).
 Left for zstd:
 
 - The FSE steps and `put_seqs`, 1.8 times libzstd's time a byte on `webster` at

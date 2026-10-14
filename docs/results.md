@@ -353,3 +353,30 @@ times on `x-ray`. At level 3, libzstd is 1.14 to 1.29 times faster on six files,
 the package 1.07 times faster on `x-ray`; klauspost's rate is 0.84 to 1.09 times the
 package's. Against libzstd at the package's 128 KB window, libzstd is 1.26 to 1.40
 times faster at level 1 and 1.22 to 1.37 at level 3.
+
+### zstd levels 1 and 3 at `257090f`
+
+2026-10-14, task 005 step 5, Goose `46356c2`, after `b0199ba` (literals coded four at
+a time) and `257090f` (a sequence's bits in one flush)
+([history](results-history.md#task-005-zstds-literals-and-sequences-at-257090f)),
+measured as at [`e1a9800`](#zstd-levels-1-and-3-at-e1a9800). The run went twice; each
+cell's medians agreed within 2.3 percent, except klauspost's: within 14.2 at level 3 on
+`xml`, 12.6 at level 1 on `x-ray`, and 5.6 or less elsewhere. The table is the first.
+The output is the same as at `b396581`.
+
+| File | MB | Level 1 goose | libzstd | libzstd, 128 KB | klauspost | Level 3 goose | libzstd | libzstd, 128 KB | klauspost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dickens | 10.2 | 227.8 | 358.4 | 313.0 | 207.3 | 175.7 | 195.9 | 212.7 | 165.5 |
+| webster | 41.5 | 273.3 | 415.7 | 357.8 | 254.2 | 210.5 | 240.8 | 277.5 | 202.9 |
+| xml | 5.3 | 565.1 | 829.7 | 710.2 | 531.5 | 488.7 | 614.6 | 580.4 | 421.0 |
+| nci | 33.6 | 754.2 | 1,007.5 | 976.7 | 656.2 | 682.6 | 811.8 | 815.8 | 601.2 |
+| mozilla | 51.2 | 339.9 | 525.0 | 448.1 | 336.3 | 240.5 | 284.8 | 322.4 | 264.2 |
+| samba | 21.6 | 418.3 | 607.8 | 519.4 | 418.6 | 335.2 | 383.1 | 413.6 | 345.3 |
+| x-ray | 8.5 | 710.6 | 841.5 | 939.3 | 2,301.6 | 160.1 | 148.1 | 213.1 | 151.2 |
+
+At level 1, libzstd is 1.34 to 1.57 times faster on six files and 1.18 times on
+`x-ray`; klauspost's rate is 0.87 to 1.00 times the package's on six files, and 3.2
+times on `x-ray`. At level 3, libzstd is 1.11 to 1.26 times faster on six files, and
+the package 1.08 times faster on `x-ray`; klauspost's rate is 0.86 to 1.10 times the
+package's. Against libzstd at the package's 128 KB window, libzstd is 1.24 to 1.37
+times faster at level 1 and 1.19 to 1.34 at level 3.
