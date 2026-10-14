@@ -1549,7 +1549,9 @@ libzstd's at level 1:
 | x-ray | 700.0 | +11.5% | +13.6% | -0.2% | -0.0% | +0.0% |
 
 The smaller table trades output for rate: 2^13 runs up to 18.6 percent faster and
-writes up to 7.8 percent more than 2^15, and more than libzstd on every file. 2^14
+writes up to 7.8 percent more than 2^15, and at least libzstd's size on every file. 2^14
 gains up to 12.3 percent for at most 3.1 percent more output, and stays at or under
-libzstd's size on four files of seven, where 2^15 is under it on five. Level 1 stays at 2^15 until the choice is made
-(`build/task005/zs/tab.patch`, at 2^14).
+libzstd's size on four files of seven, where 2^15 is under it on five. Level 1 takes
+2^13, libzstd's own, as the task's parity compares level by level (2026-10-14). Over
+the 12 Silesia files its output goes from 0.3378 of the input to 0.3498, against
+libzstd's 0.3455.

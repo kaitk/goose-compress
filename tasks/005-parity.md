@@ -53,10 +53,10 @@ Left for zstd:
 
 - The FSE steps and `put_seqs`, 1.8 times libzstd's time a byte on `webster` at
   `e1a9800`; the literals' Huffman coding on `x-ray`, 1.7 times.
-- Level 1's hash table: 2^14 entries gain up to 12.3 percent for up to 3.1 percent
-  more output, and 2^13, libzstd's 32 KB, up to 18.6 for up to 7.8 percent more
-  ([history](../docs/results-history.md#level-1s-hash-table-against-the-l2)). The
-  choice is open.
+- A run at the commit that gives level 1 libzstd's 2^13-entry table (up to 18.6
+  percent faster, up to 7.8 percent more output,
+  [history](../docs/results-history.md#level-1s-hash-table-against-the-l2)), for
+  `docs/results.md` and the README.
 
 Left for DEFLATE, after zstd:
 

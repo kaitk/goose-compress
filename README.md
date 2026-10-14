@@ -21,7 +21,7 @@ and each block's literals and sequences are coded with tables chosen for it.
 | 🟢 | gzip | LZ77 with dynamic Huffman codes, levels 0 to 9. 1.05 to 1.7 times slower than zlib-ng and libdeflate at levels 1 and 6 on an M1 Pro. On a Ryzen, 0.56 to 0.66 of libdeflate's rate at level 1 for the same output size, 0.74 to 0.88 at level 6, and 0.85 to 1.12 at level 9 ([results](docs/results.md)); speed is still being tuned. |
 | 🟢 | zlib (HTTP's `deflate`) | The same DEFLATE stream as gzip, with the zlib header and Adler-32. |
 | 🟢 | Raw DEFLATE | The same stream with no wrapper. |
-| 🟢 | zstd | Levels 1 and 3, libzstd's fast and double-fast matchers, into compressed blocks with Huffman literals and FSE tables chosen per block; levels 2 and up run level 3. Silesia comes to 0.3378 of its size at level 1 and 0.3251 at level 3, against libzstd's 0.3455 and 0.3121. 2.0 to 3.2 times slower than libzstd and 1.6 to 1.9 times slower than klauspost/compress on six files of seven, on an M1 Pro ([results](docs/results.md#zstd-levels-1-and-3-at-237de3a)); speed is still being improved. |
+| 🟢 | zstd | Levels 1 and 3, libzstd's fast and double-fast matchers, into compressed blocks with Huffman literals and FSE tables chosen per block; levels 2 and up run level 3. Silesia comes to 0.3498 of its size at level 1 and 0.3251 at level 3, against libzstd's 0.3455 and 0.3121. 2.0 to 3.2 times slower than libzstd and 1.6 to 1.9 times slower than klauspost/compress on six files of seven, on an M1 Pro ([results](docs/results.md#zstd-levels-1-and-3-at-237de3a)); speed is still being improved. |
 | 🔴 | Brotli | Out of scope: HTTP servers serve it precompressed (task 002). |
 | 🔴 | Decoding | Out of scope for now. |
 
@@ -179,7 +179,7 @@ No code is adopted from another encoder. The package follows these designs, and
 | Moffat and Katajainen (1995) | Optimal Huffman code lengths, computed in place |
 | [libdeflate](https://github.com/ebiggers/libdeflate) | Hash-chain search, lazy matching, each level's parameters, 8-byte symbol stores |
 | [libzstd](https://github.com/facebook/zstd) | zstd levels 1 and 3 (`ZSTD_fast`, `ZSTD_dfast`), literals, FSE tables |
-| [klauspost/compress](https://github.com/klauspost/compress) | zstd level 1's 6-byte hash and table size |
+| [klauspost/compress](https://github.com/klauspost/compress) | zstd level 1's 6-byte hash |
 | xxHash specification | XXH64 |
 | RFC 8878 | zstd's block format, predefined tables, and bitstream order |
 

@@ -182,9 +182,9 @@ def inputs():
            1.001, 0.345)
     yield ("repeats at 131072", repeats_at(r, ZSTD_WINDOW, 3 * ZSTD_WINDOW),
            1.001, 1.001)
-    yield "short matches", short_matches(r, 300_000), 0.39, (0.475, 0.39)
+    yield "short matches", short_matches(r, 300_000), 0.39, (0.63, 0.39)
     yield "skewed bytes", skewed(r, 300_000), 0.79, 0.795
-    yield "changing statistics", changing(random.Random(6)), None, (0.645, 0.615)
+    yield "changing statistics", changing(random.Random(6)), None, (0.665, 0.615)
 
 
 def plans(n):

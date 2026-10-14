@@ -26,10 +26,13 @@ let ZSTD_WINDOW = 1 << ZSTD_WINDOW_LOG;
 // time, so a slide doesn't copy the window for every few bytes a flush ends.
 let ZSTD_SLIDE = ZSTD_BLOCK_MAX / 4;
 let ZSTD_WIN_SIZE = ZSTD_WINDOW + ZSTD_BLOCK_MAX + ZSTD_SLIDE;
-// Level 1's hash table, of the first ZSTD_HASH_BYTES bytes at a position.
+// The hash table `head`, of the first ZSTD_HASH_BYTES bytes at a position.
+// Level 1 uses 2^ZSTD_FAST_LOG entries of it, libzstd's 32 KB, which stays in
+// L2 beside the window; level 3 uses all of it.
 let ZSTD_HASH_LOG = 15;
 let ZSTD_HASH_SIZE = 1 << ZSTD_HASH_LOG;
 let ZSTD_HASH_BYTES = 6;
+let ZSTD_FAST_LOG = 13;
 // How fast level 1 steps over input where it finds no match: 1 more position
 // a probe for each 2^ZSTD_SKIP_LOG it has gone without one.
 let ZSTD_SKIP_LOG = 7;
@@ -205,7 +208,7 @@ fn next_block(e: ZstdEncoder&, out: u8[>..]&, end: i64, last: bool) {
 
 // `% ZSTD_HASH_SIZE` lets the compiler drop the table's bounds check.
 fn hash_zstd(v: u64) -> i64 {
-    return ((((v << (64 - 8 * ZSTD_HASH_BYTES)) * 0x9E3779B97F4A7C15) >> (64 - ZSTD_HASH_LOG))
+    return ((((v << (64 - 8 * ZSTD_HASH_BYTES)) * 0x9E3779B97F4A7C15) >> (64 - ZSTD_FAST_LOG))
         % ZSTD_HASH_SIZE) as! i64;
 }
 

@@ -207,7 +207,9 @@ until the task named beside it confirms or replaces it.
   [results](../results.md#zstd-levels-1-and-3-at-237de3a)): with the same 128 KB
   window, Silesia's output is 5.0 percent smaller than libzstd's at level 1 and 2.3
   percent smaller at level 3. Level 3's 4.2 percent over libzstd's full 2 MB window is
-  all the window's.
+  all the window's. With level 1's 2^13 table (2026-10-14), level 1's output is 1.6
+  percent smaller than libzstd's at 128 KB and 1.2 percent larger than at its own 512
+  KB.
 - **A zstd block is matched once it's whole**, as libzstd's streaming API does: 128 KB
   of input past the last block, or the input held at a flush or finish. A match ends at
   the block's end, so blocks and matches don't depend on how writes split the input,
@@ -222,13 +224,20 @@ until the task named beside it confirms or replaces it.
   of the 12 Silesia files reaches it at level 1, the most being `mozilla`'s 15,263;
   `roundtrip.py`'s input of a sequence every 6 bytes reaches it in its second block
   (task 004 step 2, 2026-10-13).
-- **zstd's level 1 is libzstd's `ZSTD_fast`**: a hash table of 2^15 stream offsets,
+- **zstd's level 1 is libzstd's `ZSTD_fast`**: a hash table of 2^13 stream offsets,
   hashed from 6 bytes as klauspost's `enc_fast.go` does, probed at two positions a
   step, with the last offset checked two positions on first and a match extended back.
   After a match, the offset before last is tried at once. The step grows by one
   position every 128 bytes without a match. libzstd's 7-byte hash made Silesia's
   output 2.6 percent larger; a 5-byte one gained 1.7 percent, nearly all on `x-ray`,
   and was 2 to 9 percent slower (task 004 step 2, 2026-10-13).
+- **zstd's level 1 table is libzstd's 2^13 entries, 32 KB**, which stays in the
+  Ryzen's 512 KB L2 beside the window, not klauspost's 2^15. It's up to 18.6 percent
+  faster, and Silesia's output goes from 0.3378 of its input to 0.3498, against
+  libzstd's 0.3455 at level 1 and 0.3556 with a 128 KB window. 2^14 gained up to 12.3
+  percent for up to 3.1 percent more output. Level 1 uses the first 2^13 entries of
+  level 3's short table, so the encoder's size is the same (task 005, 2026-10-14,
+  [results](../results-history.md#level-1s-hash-table-against-the-l2)).
 - **zstd's level 3 is libzstd's `ZSTD_dfast`, with libzstd's parameters for inputs up
   to 128 KB**: a table of 2^16 stream offsets hashed from 8 bytes, beside level 1's
   table of 2^15, here hashed from 5. Each position checks the last offset one position
