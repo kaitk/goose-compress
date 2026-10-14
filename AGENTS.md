@@ -9,7 +9,8 @@
 - Benchmark results: `docs/results.md` (each machine's latest run) and
   `docs/results-history.md` (earlier runs and each change's measurements)
 - Task tracking: `tasks/` (see `tasks/README.md`)
-- Writing docs: `.claude/skills/google-style/SKILL.md`
+- Substantial doc drafts and requested prose reviews:
+  `.claude/skills/google-style/SKILL.md`; other writing follows "Writing" below
 - The formats: RFC 1951 (DEFLATE), RFC 1950 (zlib), and RFC 1952 (gzip).
 - The language: the pinned Goose checkout's `docs/tutorial.md`, `docs/goose_spec.md`,
   and `docs/stdlib.md`. Read the tutorial before writing Goose; check the spec before
@@ -23,6 +24,22 @@ agent finds them. Docs and commits name no people: date a decision or a request
 directory. What only one machine needs, such as where its Goose checkout is, goes in
 `CLAUDE.local.md`, which git ignores. Benchmark results still name their machine.
 
+## Writing
+
+- Lead with the decision, behavior, or action, then explain why. Name the responsible
+  component and use concrete facts. Cut filler and repeated summaries.
+- Preserve technical meaning when editing: actors, negations, conditions, numbers,
+  versions, commands, paths, and identifiers. Keep decided/proposed/open,
+  implemented/planned, and must/should/can distinct. Flag contradictions instead of
+  silently resolving them while copyediting.
+- Record a decision with its reason and the trade-off that matters. Keep each fact in
+  one place and link to it elsewhere. Use absolute dates for dated events.
+- Match the document's format. Tasks follow `tasks/README.md`, with concrete acceptance
+  criteria. Use sentence-case headings, backticks for code identifiers and commands,
+  and descriptive links. Wrap prose at about 90 characters.
+- Use prose for connected ideas, lists for steps or separate items, and tables for
+  comparisons. Keep structure proportional to the content.
+
 ## Goose, not an addition to Goose
 
 - The Goose repository changes daily. Fetch the Goose checkout `GOOSE` is built from
@@ -34,6 +51,9 @@ directory. What only one machine needs, such as where its Goose checkout is, goe
 - Every finding names the Goose commit it was found on, the pin at the time. When one
   lacks it, recover it from this repository's history: the pin in the commit that added
   the entry.
+- `docs/goose-findings.md` lists bugs first and feature requests after, each part from
+  the least work a fix is expected to take to the most. Place a new entry by that
+  order, and delete an entry once the pin has its fix (2026-10-14).
 - Write Goose the way the pinned checkout's `samples/` and `stdlib/` do: flat data,
   references into growing arrays, `return ... from` for errors, untyped parameters for
   generics.
