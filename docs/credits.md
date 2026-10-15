@@ -66,7 +66,7 @@ Level 1 follows libzstd's `ZSTD_fast` (`facebook/zstd`):
 
 The 6-byte hash follows klauspost's `enc_fast.go` (`klauspost/compress`). Level 1
 uses 2^13 entries, following libzstd's table size for inputs up to 128 KB. The
-[architecture decision](architecture/README.md) records the rate and size trade-off.
+[decision](decisions.md) records the rate and size trade-off.
 
 ### Level 3
 

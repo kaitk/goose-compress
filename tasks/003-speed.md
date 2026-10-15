@@ -15,7 +15,7 @@ alternating rounds on a quiet machine (`docs/development.md`, "Benchmark"). A ch
 is kept only where it pays, and committed once `scripts/test.sh` passes. Every
 measurement, kept or not, goes in `docs/results-history.md` with how it was taken. The
 level parameters stay unless a measurement argues otherwise; a change to them, or to
-any other recorded decision, goes in the architecture doc in the same commit.
+any other recorded decision, goes in `docs/decisions.md` in the same commit.
 
 ## Results and follow-up
 
@@ -37,7 +37,7 @@ instructions for them. Keep or replace the package's tables based on measurement
       block-layout experiments are tracked in task 005)
 - [x] Kept changes committed one at a time, each with `scripts/test.sh` passing
 - [x] Any change to a recorded decision or level parameter recorded in
-      `docs/architecture/README.md`
+      `docs/decisions.md`
 - [x] Adler-32's rate measured, and whether `simd fn` applies recorded
 - [x] `LEVELS="1 6 9" bench/run.sh` recorded in `docs/results.md`, with machine, OS,
       compiler, command, corpus, and run count (M1 Pro at `ce13855`)

@@ -54,7 +54,7 @@ Levels 1 to 9 find LZ77 matches with one probe of a 4-byte hash a position, gree
 up to 32,768 bytes back across writes and flushes. Each block of up to 16,384 symbols
 is coded with the fixed Huffman tables, or stored where that's shorter. A stream holds
 262,484 bytes. The decisions are in the
-[architecture doc](../../docs/architecture/README.md). Level 0 stores as at step 1, but
+[decisions](../../docs/decisions.md). Level 0 stores as at step 1, but
 `compress` now runs the streaming encoder, so a one-shot input of a whole number of
 65,535-byte blocks ends with an empty final block, as a stream's always did.
 
@@ -71,7 +71,7 @@ or stored, whichever takes the fewest bits. Code lengths are optimal (Moffat and
 Katajainen) until one passes 15 bits, then limited as zlib limits them. Blocks still end
 at 16,384 symbols and at a slide that would drop their first bytes: running past the
 slide, and larger blocks, each gave more output on Silesia, so a stream still holds
-262,484 bytes. The decisions are in the [architecture doc](../../docs/architecture/README.md).
+262,484 bytes. The decisions are in [decisions](../../docs/decisions.md).
 
 At level 1 the package's output is smaller than zlib-ng's on all seven Silesia files
 and 1.3 to 20 percent larger than libdeflate's (13 to 32 percent at step 2). It
@@ -92,7 +92,7 @@ the chains. Measured and not kept: table lookups for the length and distance cod
 twice the size. Zeroing a stream can't be avoided in the package: the compiler builds
 an `Encoder` through temporaries
 ([findings](../../docs/goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)).
-The decisions are in the [architecture doc](../../docs/architecture/README.md).
+The decisions are in [decisions](../../docs/decisions.md).
 
 On 7 Silesia files, against step 3: level 1 compresses 112-351 MB/s, 1.1 to 1.7 times
 slower than zlib-ng and 1.3 to 1.7 times slower than libdeflate (2.1 to 3.9 times at

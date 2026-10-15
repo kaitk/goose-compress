@@ -59,7 +59,7 @@ A proxy replaces an encoder whole. libdeflate has no streaming or sync flush, so
 DEFLATE `Encoder` proxy would need zlib-ng; one-shot `compress` could use libdeflate.
 A proxy reverses the pure-Goose architecture decision and the rule on C in `AGENTS.md`,
 so any implementation starts on a separate branch after the decision and its evidence
-are recorded in [architecture](../docs/architecture/README.md).
+are recorded in [decisions](../docs/decisions.md).
 
 ## Acceptance criteria
 

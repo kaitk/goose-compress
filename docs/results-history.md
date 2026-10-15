@@ -556,7 +556,7 @@ window, a block, and 32 KB.
 
 A larger window shrinks output 1.4 percent at 256 KB and 2.0 percent at 512 KB (`xml`
 7 and 9 percent, `dickens` 2 and 2.5), but only on inputs past 128 KB. Kept at 128 KB
-([architecture](architecture/README.md)). The 5-byte hash's gain is almost all
+([decisions](decisions.md)). The 5-byte hash's gain is almost all
 `x-ray` (0.927 against 0.997), whose literals step 3 will code. On the text files
 its output is within 3 percent either way, and it's slower.
 

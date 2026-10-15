@@ -3,7 +3,7 @@
 Compression package for [Goose](https://github.com/aardappel/goose): gzip, zlib, raw
 DEFLATE, and zstd encoders, bytes in and bytes out, with a streaming encoder that
 flushes. Pure
-Goose, with no C ([architecture](docs/architecture/README.md)). Its first user is
+Goose, with no C ([architecture](docs/architecture.md)). Its first user is
 [goose-http](https://github.com/kaitk/goose-http), which compresses responses with it.
 
 For DEFLATE, level 1 finds LZ77 matches in 2-entry hash buckets; levels 2 to 9
@@ -80,7 +80,7 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
 - **`compress::encoder(format = GZIP, level = DEFAULT_LEVEL)`**: a stream,
   `compress::Encoder`. It's a fixed-size value of 460,406 bytes, so it fits in an
   array of per-connection slots: a 64 KB window, a 256 KB hash table, 64 KB of hash
-  chains, and a 64 KB block of symbols ([architecture](docs/architecture/README.md)).
+  chains, and a 64 KB block of symbols ([architecture](docs/architecture.md#formats-and-the-api)).
   Building one copies its arrays several times at the pinned compiler, about 145 µs on
   a Ryzen under Windows
   ([findings](docs/goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)),
@@ -118,7 +118,7 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
   11 KB of FSE tables. Its
   `reset` clears nothing large: a stream starts out of the hash tables' reach, and
   they're cleared after 2 GB of streams, counting 128 KB more for each
-  ([architecture](docs/architecture/README.md)). When the one-shot `compress` level is
+  ([decisions](docs/decisions.md)). When the one-shot `compress` level is
   omitted, its default of 6 selects zstd's level-3 matcher.
 - **`compress::crc32(crc, data)`** and **`compress::adler32(adler, data)`**: the
   checksums, continuing from a previous value. Start CRC-32 at 0 and Adler-32 at 1.
@@ -201,7 +201,8 @@ test/                unit tests, and encode.goose, which scripts/roundtrip.py dr
 scripts/             test scripts
 bench/               the C harness for libdeflate, zlib-ng, and libzstd, the Go one for
                      klauspost/compress, the Goose one, and scripts
-docs/                architecture, development setup, results, Goose findings, credits
+docs/                architecture, decisions, development setup, results, Goose findings,
+                     credits
 tasks/               task tracking (tasks/README.md)
 ```
 

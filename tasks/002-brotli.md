@@ -4,7 +4,7 @@ Status: todo (a possible follow-up, not started until a measurement asks for it;
 recorded 2026-10-12)
 
 Brotli encoding on the fly is out of scope. This task records what would justify
-adding it; the decision is in [architecture](../docs/architecture/README.md).
+adding it; the decision is in [decisions](../docs/decisions.md).
 
 ## Why it's out
 
@@ -23,4 +23,4 @@ the measurement; this task does not maintain a browser compatibility table.
 
 - [ ] Safari's current `zstd` support checked, and the size gap measured on the
       deployment's own responses
-- [ ] A decision to build or keep out, recorded in `docs/architecture/README.md`
+- [ ] A decision to build or keep out, recorded in `docs/decisions.md`

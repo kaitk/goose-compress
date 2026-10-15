@@ -1,7 +1,9 @@
-# Architecture
+# Decisions
 
-Current design decisions, their reasons, and the relevant trade-offs. Measurements
-are recorded in [results history](../results-history.md).
+The record of goose-compress's design decisions, for contributors and agents: each
+dated, with its reason and the trade-off that matters. How the package works, for its
+users, is [architecture](architecture.md). Measurements are recorded in
+[results history](results-history.md).
 
 ## Settled
 
@@ -39,11 +41,11 @@ are recorded in [results history](../results-history.md).
 - **An encoder is reset in place, not rebuilt.** `reset` zeroes an `Encoder` where it
   is, because a struct literal builds one through temporaries and copies each array
   several times
-  ([findings](../goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)).
+  ([findings](goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)).
   `compress` resets one encoder that each program instance builds at its first call
   and keeps, held in a resizable global: a global `Encoder`, whose address clang
   knows, made level 6 2 to 7 percent slower on the Ryzen
-  ([measurement](../results-history.md#small-inputs-2), task 003, 2026-10-12).
+  ([measurement](results-history.md#small-inputs-2), task 003, 2026-10-12).
 - **A stream holds 460,406 bytes**, whatever its level: a window of 65,800 bytes, a
   hash table of 262,144, hash chains of 65,536, a block of symbols of 65,536, and
   the block's symbol counts, 1,264, plus scalar state.
@@ -95,7 +97,7 @@ are recorded in [results history](../results-history.md).
   byte found by a de Bruijn multiply and a 64-entry table. std's `ctz` was a loop until
   Goose `d687028`; as an instruction it made DEFLATE's chain search 3 to 5 percent
   slower on `x-ray` at levels 6 and 9, and zstd's own `match_len` uses it
-  ([results](../results-history.md#task-005-zstds-own-match_len-at-d10dd61), 2026-10-14).
+  ([results](results-history.md#task-005-zstds-own-match_len-at-d10dd61), 2026-10-14).
   `match_len` is an `inline fn`: as a call it lost more than the compare gained, 5 to 7
   percent at level 6 on `x-ray`. Against a byte at a time it made every level 0.8 to
   9.0 percent faster on the Ryzen, most on `nci` (task 005, 2026-10-13). With `ctz`
@@ -170,7 +172,7 @@ are recorded in [results history](../results-history.md).
 - **CRC-32 by slice-by-16**, from a 16 KB table: 2.8 GB/s on an M1 Pro, against 346
   MB/s a byte at a time and 1.8 GB/s by slice-by-8. The libraries' carryless multiply
   is out of Goose's reach
-  ([findings](../goose-findings.md#goose-has-no-carryless-multiply)) (task 001 step 4,
+  ([findings](goose-findings.md#goose-has-no-carryless-multiply)) (task 001 step 4,
   2026-10-12).
 - **zstd is a fourth format for `compress`, with a stream type of its own.**
   `compress::ZSTD` lets a caller such as goose-http pick any encoding with one
@@ -195,9 +197,9 @@ are recorded in [results history](../results-history.md).
   557,232, and only on inputs past 128 KB; libzstd itself takes a 128 KB window for
   inputs up to 128 KB. Most HTTP responses are smaller than that, and the encoder is
   held per connection slot (task 004 step 2, 2026-10-13,
-  [results](../results-history.md#the-window-and-the-matchers-parameters)). Confirmed
+  [results](results-history.md#the-window-and-the-matchers-parameters)). Confirmed
   against libzstd built in `bench/` (task 004 step 6, 2026-10-13,
-  [results](../results.md#zstd-levels-1-and-3-at-237de3a)): with the same 128 KB
+  [results](results.md#zstd-levels-1-and-3-at-237de3a)): with the same 128 KB
   window, Silesia's output is 5.0 percent smaller than libzstd's at level 1 and 2.3
   percent smaller at level 3. Level 3's 4.2 percent over libzstd's full 2 MB window is
   all the window's. With level 1's 2^13 table (2026-10-14), level 1's output is 1.6
@@ -230,7 +232,7 @@ are recorded in [results history](../results-history.md).
   libzstd's 0.3455 at level 1 and 0.3556 with a 128 KB window. 2^14 gained up to 12.3
   percent for up to 3.1 percent more output. Level 1 uses the first 2^13 entries of
   level 3's short table, so the encoder's size is the same (task 005, 2026-10-14,
-  [results](../results-history.md#level-1s-hash-table-against-the-l2)).
+  [results](results-history.md#level-1s-hash-table-against-the-l2)).
 - **zstd's level 3 is libzstd's `ZSTD_dfast`, with libzstd's parameters for inputs up
   to 128 KB**: a table of 2^16 stream offsets hashed from 8 bytes and a table of
   2^15 offsets hashed from 5. Each position checks the last offset one position
@@ -243,7 +245,7 @@ are recorded in [results history](../results-history.md).
   inputs, made the output 0.15 percent smaller for 256 KB more; a 6-byte short hash
   made it 2.0 percent larger, and a 4-byte one left it the same as 5 (task 004 step 5,
   2026-10-13,
-  [results](../results-history.md#zstd-level-3-task-004-step-5)).
+  [results](results-history.md#zstd-level-3-task-004-step-5)).
 - **A zstd `reset` keeps the hash tables.** Each stream's offsets start a window past
   the last stream's end, so no entry from before is in reach, and a new encoder's start
   a window past 0, so its empty entries aren't either: a reset stream codes as a new
@@ -272,13 +274,13 @@ are recorded in [results history](../results-history.md).
   1/128 of them and 4 stay raw without a code built, libzstd's guess. A block of
   literals alone is compressed too. Silesia's output went from 0.4246 of its input to
   0.3768, against `zstd -1`'s 0.3457, for 17 to 22 percent of the rate (task 004 step
-  3, 2026-10-13, [results](../results-history.md#zstd-huffman-literals-task-004-step-3)).
+  3, 2026-10-13, [results](results-history.md#zstd-huffman-literals-task-004-step-3)).
 - **zstd literals are copied into a contiguous 128 KB buffer as sequences are stored.**
   Each Huffman stream's counts are kept separately, so its size is known before any
   stream is written. The buffer avoids walking sequences again to count and write
   literals. It adds 131,072 bytes to the encoder, for a total of 1,010,955 bytes at
   every level; the measured rate gain justified the memory cost
-  ([measurement](../results-history.md#task-005-zstd-coding-changes-at-b396581),
+  ([measurement](results-history.md#task-005-zstd-coding-changes-at-b396581),
   task 005, 2026-10-13).
 - **Each kind of zstd sequence code takes the table its block codes in the fewest
   bits**: one built from the block's counts, the predefined one, an RLE table for one
@@ -289,7 +291,7 @@ are recorded in [results history](../results-history.md).
   at most 9, 8, and 9 for literal lengths, offsets, and match lengths. Silesia's
   output went from 0.3768 of its input to 0.3378, below `zstd -1`'s 0.3457, for 2
   percent of the rate or less (task 004 step 4, 2026-10-13,
-  [results](../results-history.md#zstd-fse-tables-per-block-task-004-step-4)).
+  [results](results-history.md#zstd-fse-tables-per-block-task-004-step-4)).
 - **A `ZstdEncoder` holds two table slots for each kind of code**: the decoder's
   table, which a block can repeat, and one the block builds into, which becomes the
   decoder's only when the block is written compressed. Repeat mode carries across
@@ -299,3 +301,17 @@ are recorded in [results history](../results-history.md).
   take 54 KB a table at that accuracy. Each sequence's three codes are kept, 48 KB,
   so they're computed once for counting, sizing, and writing (task 004 step 4,
   2026-10-13).
+- **Tests follow Goose's own convention**, as the Goose repository's `test/` and
+  `docs/testing.md` lay it out, in goose-compress, goose-http, and goose-rest alike: a
+  top-level `test/` by area; each test a small program, a `main` with `assert`s that
+  prints what it checks, against a golden file in `test/expected/` (`<name>.out`, and
+  `<name>.stderr` and `<name>.aborts` where they apply); `// error:` fixtures for code
+  that must not compile; shared helpers in one imported module; and the repository's own runner,
+  `test/run_tests.py` in Python as Goose's is, shared with no other repository, that
+  compiles them in batches with `goose --multi-test`, runs each as a process of its own
+  and in parallel, and reports every failure without stopping at the first. It
+  replaces test programs run by name, where the first failed `assert` ends a program.
+  Rejected: a test framework inside Goose, which has no reflection to find tests and
+  needs none to check printed output; and tests beside the code, since the compiler
+  leaves out of a build what its root doesn't import, and a separate `test/` matches
+  the convention any reader of Goose's own repository knows (task 007, 2026-10-15).

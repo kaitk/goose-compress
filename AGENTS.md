@@ -3,7 +3,9 @@
 ## Project context
 
 - What this is, its API, and its pin: `README.md`
-- Architecture decisions: `docs/architecture/README.md`
+- How it works, for users: `docs/architecture.md`; the decisions, each dated with its
+  reason and trade-off: `docs/decisions.md`. A new decision goes in `docs/decisions.md`,
+  and `docs/architecture.md` changes with it where it describes what changed
 - Toolchain, local setup, tests, and benchmarks: `docs/development.md`
 - Goose compiler and stdlib gaps found here: `docs/goose-findings.md`
 - Benchmark results: `docs/results.md` (each machine's latest run) and
@@ -79,6 +81,10 @@ directory. What only one machine needs, such as where its Goose checkout is, goe
 - Edit files with the Edit tool, not with `sed` or a Python or PowerShell script. On
   Windows, line endings differ by file type and a shell adds a layer of escaping, and
   scripted edits break on both.
+- Tests follow Goose's own convention: a top-level `test/` by area, each test a small
+  program whose printed output a golden file in `test/expected/` checks, `// error:`
+  fixtures for code that must not compile, and a runner that batches them with
+  `goose --multi-test` ([decisions](docs/decisions.md), 2026-10-15).
 
 ## Commits
 

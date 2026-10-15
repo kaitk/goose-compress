@@ -37,7 +37,7 @@ after those are measured. This task follows that order.
 
 ## Proposed decisions
 
-Recorded in `docs/architecture/README.md`. Step 1 settled all but the window and the
+Recorded in `docs/decisions.md`. Step 1 settled all but the window and the
 levels; step 2 kept the 128 KB window, step 5 settled the levels, and step 6 confirmed
 both against libzstd and klauspost:
 
@@ -89,7 +89,7 @@ both against libzstd and klauspost:
 - [x] Step 6: libzstd built in `bench/` in release mode, and rate and ratio at levels
       1 and 3 recorded in `docs/results.md`, and what was measured around them in
       `docs/results-history.md`, with how they were measured
-- [x] Decisions above confirmed or replaced in `docs/architecture/README.md`, and the
+- [x] Decisions above confirmed or replaced in `docs/decisions.md`, and the
       README's status table and API updated
 - [x] Findings recorded in `docs/goose-findings.md`: steps 1 to 6 found none new
 
