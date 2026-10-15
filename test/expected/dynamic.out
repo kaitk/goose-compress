@@ -1,0 +1,17 @@
+no matches: 35 bytes
+   05 c1 31 0d 00 00 00 83 30 ad 0b 07 06 f0 9f b5
+   db d8 dc 1a 0c 47 93 e9 6c b1 5c 01 42 28 46 52
+   6a 56 07
+short matches: 33 bytes
+   25 88 b1 0d 00 40 10 82 66 25 16 2e c0 fe f9 f8
+   57 18 84 a2 84 43 b0 a4 d2 6c b8 9f 8e 38 ff bd
+   0f
+its final bit and BTYPE: 5
+flushed: 37 bytes, the block's and 4 or 5 more: ok
+the same block, not final: ok
+ending in: 4 bytes
+   00 00 ff ff
+then a block matching across the flush: 37 bytes
+   25 cc b1 0d 00 20 00 84 c0 59 3f 14 2c c0 fe 31
+   6a cf b1 8d cd ed 11 dc af 75 b6 de a4 00 21 14
+   e3 ca d4 ac 0e

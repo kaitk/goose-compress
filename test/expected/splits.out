@@ -1,0 +1,12 @@
+level 0, copies, one-shot: length: 196781
+level 0, copies, 196743 bytes: written in pieces of each size, as one-shot: ok
+level 0, far repeats, one-shot: length: 131105
+level 0, far repeats, 131072 bytes: written in pieces of each size, as one-shot: ok
+level 1, copies, 196743 bytes: written in pieces of each size, as one-shot: ok
+level 1, far repeats, 131072 bytes: written in pieces of each size, as one-shot: ok
+level 2, copies, 196743 bytes: written in pieces of each size, as one-shot: ok
+level 2, far repeats, 131072 bytes: written in pieces of each size, as one-shot: ok
+level 6, copies, 196743 bytes: written in pieces of each size, as one-shot: ok
+level 6, far repeats, 131072 bytes: written in pieces of each size, as one-shot: ok
+level 9, copies, 196743 bytes: written in pieces of each size, as one-shot: ok
+level 9, far repeats, 131072 bytes: written in pieces of each size, as one-shot: ok

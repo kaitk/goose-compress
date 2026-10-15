@@ -1,0 +1,10 @@
+crc32 of "": 00000000
+crc32 of "123456789": cbf43926
+crc32 of "1234", then "56789": cbf43926
+crc32 of 100000 bytes 0xff: 68c6cec4
+crc32 of bytes 0 to 255, 40 times: bbce3b9d
+the same, split at 1: bbce3b9d
+the same, split at 15: bbce3b9d
+the same, split at 16: bbce3b9d
+the same, split at 17: bbce3b9d
+the same, split at 5000: bbce3b9d

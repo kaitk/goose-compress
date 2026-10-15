@@ -5,7 +5,8 @@ benchmarks have run on macOS and on Windows under Git Bash (2026-10-14); they ne
 POSIX shell, Python 3.14 or later, `gzip`, the `zstd` command, and Go for
 `bench/build.sh`, and should run unchanged on Linux. Both DEFLATE and zstd benchmarks
 have run on macOS and
-Windows; Linux has not been validated here.
+Windows; on Linux, only `test/run_tests.py` has run, on x64 in Docker's `python:3.12`
+image with its gcc (2026-10-15).
 
 ## Toolchain
 
@@ -97,27 +98,28 @@ table with the reason, and return to a release once one includes the fix.
 
 ## Test
 
-`scripts/test.sh` runs everything, and stops at the first failure:
+`scripts/test.sh` runs everything, and stops at the first step that fails:
 
 1. `goose check` of each root file under `test/` and `bench/`.
-2. `scripts/test-unit.sh`: each `test/test_*.goose` through TinyCC, in the compiler's
-   process. `test/test_compress.goose` checks the checksums against known values, the
-   Huffman code builder (RFC 1951's canonical-code example, optimal lengths, and
-   Fibonacci frequencies cut to 15 and 7 bits), the exact bytes of small streams at
-   level 0 and of small fixed and dynamic Huffman streams at level 1, what the levels
-   match differently (level 1 tries a bucket's 2 newest entries and level 2 follows the
-   chain past them; levels 5 and
-   up take a literal for a longer match one byte on), flushes, matches at distance
-   32,768, and that a stream's bytes don't depend on how its input was split across
-   writes, at levels 0, 1, 2, 6, and 9. Each exact-byte stream at level 1 and up was
-   checked by decompressing it with Python's `zlib`. For zstd, it checks XXH64 against
-   known values, and the exact bytes of empty, raw, RLE, and compressed blocks: two
-   with sequences and the predefined tables, the second across a flush with a repeat
-   offset; one of Huffman literals alone; and two across a flush, the first building
-   its literal length and offset tables and the second repeating them; and one at
-   level 3 of 5-byte matches that level 1 misses. Each was checked with `zstd -d` and
-   `compression.zstd`. After `reset`, a stream must come out as from a new encoder,
-   with no table to repeat, after streams at levels 3 and 1 too.
+2. `test/run_tests.py`: the tests under `test/<area>/` ([Run the tests](#run-the-tests)).
+   `test/checksums/` checks CRC-32, Adler-32, and XXH64 against known values and
+   across splits of their input. `test/deflate/` checks the Huffman code builder
+   (RFC 1951's canonical-code example, optimal lengths, and Fibonacci frequencies cut
+   to 15 and 7 bits), the exact bytes of small streams at level 0 and of small fixed
+   and dynamic Huffman streams at level 1, what the levels match differently (level 1
+   tries a bucket's 2 newest entries and level 2 follows the chain past them; levels 5
+   and up take a literal for a longer match one byte on), and matches at distance
+   32,768. `test/stream/` checks flushes, `reset`, and that a stream's bytes don't
+   depend on how its input was split across writes, at levels 0, 1, 2, 6, and 9. Each
+   exact-byte stream at level 1 and up was checked by decompressing it with Python's
+   `zlib`. `test/zstd/` checks the exact bytes of empty, raw, RLE, and compressed
+   blocks: two with sequences and the predefined tables, the second across a flush with
+   a repeat offset; one of Huffman literals alone; and two across a flush, the first
+   building its literal length and offset tables and the second repeating them; and
+   one at level 3 of 5-byte matches that level 1 misses. Each was checked with
+   `zstd -d` and `compression.zstd`. After `reset`, a zstd stream must come out as from
+   a new encoder, with no table to repeat, after streams at levels 3 and 1 too; and its
+   bytes don't depend on how its input was split across writes.
 3. `goose build` of `test/encode.goose` into `build/encode`, a command that compresses
    a file at a level, one-shot or by a plan of writes and flushes.
 4. `scripts/roundtrip.py`: `build/encode` on each input in gzip, zlib, and raw DEFLATE,
@@ -154,12 +156,44 @@ table with the reason, and return to a release once one includes the fix.
 scripts/test.sh
 ```
 
-`GOOSE` and `GOOSE_COMMIT` pass through to `scripts/test-unit.sh`. It took about 48 s on
-the M1 Pro and 99 s on the Ryzen under Git Bash, where starting a process costs more
-(2026-10-13); 51 s on the M1 Pro with `v2026.1`, its download included (2026-10-15).
-A program run
-through TinyCC compiles at `-O1` without a C compiler, so the unit tests start fast;
+`GOOSE`, `GOOSE_COMMIT`, and `CC` pass through to `test/run_tests.py`. It took about 48 s
+on the M1 Pro and 99 s on the Ryzen under Git Bash, where starting a process costs more
+(2026-10-13); 46 s on the M1 Pro with `v2026.1` and `test/run_tests.py` (2026-10-15).
 `encode` is built with `goose build` because `roundtrip.py` runs it 3,880 times.
+
+### Run the tests
+
+Each test is a program, `test/<area>/<name>.goose`, that prints what it checks and
+asserts it; `test/expected/<name>.out` holds what it must print. The shared helpers are
+`test/check.goose`, which a test imports with `import check from "../";`. Names are
+unique across areas, since `test/expected/` is one directory. `test/run_tests.py` is
+Python 3 with its standard library alone:
+
+```sh
+python3 test/run_tests.py                # every test
+python3 test/run_tests.py deflate        # one area
+python3 test/run_tests.py crc32          # one test; names and areas can be mixed
+python3 test/run_tests.py -O0 zstd       # one level only
+python3 test/run_tests.py --bless crc32  # rewrite test/expected/crc32.out from its output
+```
+
+It compiles the tests to C in batches, a `goose --multi-test` run per batch, at `-O0`
+and `-O2`; builds each with the C compiler `goose toolchain` names (`CC` chooses
+another, as for `goose build --cc`), against the Goose runtime compiled once per level,
+into `build/test/`; and runs each as a process of its own, in parallel (`-j N`). Both
+levels, since `-O2` inlines and folds what `-O0` leaves alone, and native C builds the
+package as its users do; together they took about 4 s on the M1 Pro (2026-10-15). A
+run passes when its stdout is the `.out` file, and it exits 0. Where
+`test/expected/<name>.aborts` exists, the run must exit nonzero instead, and each
+nonblank line of `test/expected/<name>.stderr` must occur in its stderr. A file with
+`// error: <message>` lines is a fixture that must not compile: `goose --check` must
+exit 1, with each message in its diagnostics. The runner reports every failure, with a
+diff for a changed output, then a count per area, and exits 1 if any test failed; `-v`
+lists the passes too.
+
+After a change that alters what a test prints, run it with `--bless`, and read the diff
+of `test/expected/` before committing it: blessing writes whatever the program printed
+at the first level it ran, provided it exited as expected.
 
 To try one stream by hand:
 

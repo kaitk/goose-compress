@@ -1,8 +1,9 @@
 #!/bin/sh
-# Runs every test this repository has, and fails on the first failure: the
-# typecheck of each root file under test/ and bench/, the unit tests through TinyCC
-# (scripts/test-unit.sh), then test/encode.goose built with goose build and
-# its output checked against gzip and Python's zlib (scripts/roundtrip.py).
+# Runs every test this repository has, and fails on the first step that fails:
+# the typecheck of each root file under test/ and bench/, the tests under
+# test/<area>/ (test/run_tests.py, which reports all of its failures), then
+# test/encode.goose built with goose build and its output checked against gzip
+# and Python's zlib (scripts/roundtrip.py).
 #
 # GOOSE or GOOSE_COMMIT names the compiler (default: the pinned release,
 # scripts/goose.sh), and CC the C compiler for goose build (default: the one
@@ -27,8 +28,8 @@ for f in "$root"/test/*.goose "$root"/bench/*.goose; do
     "$goose" check "$f"
 done
 
-step "test-unit.sh"
-"$root/scripts/test-unit.sh"
+step "test/run_tests.py"
+python3 "$root/test/run_tests.py"
 
 step "build test/encode.goose"
 mkdir -p "$root/build"

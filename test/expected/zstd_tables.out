@@ -1,0 +1,11 @@
+two parts, a flush between: 113 bytes
+   28 b5 2f fd 04 38 a4 01 00 24 02 61 62 63 64 65
+   66 67 68 41 42 42 43 44 44 45 46 46 47 48 48 49
+   4a 4a 4b 4c 4c 61 62 63 64 65 66 67 68 0b a4 10
+   78 bc 3d 10 d8 e1 05 4a 95 40 05 94 3b 6d 01 00
+   24 02 69 6a 6b 6c 6d 6e 6f 70 4d 4e 4e 4f 50 50
+   51 52 52 53 54 54 55 56 56 57 58 58 69 6a 6b 6c
+   6d 6e 6f 70 0b ec 40 3e aa 42 e0 b8 3b b2 d1 03
+   a1
+the second part after reset: as from a new encoder: ok
+its modes byte: a4

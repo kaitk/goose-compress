@@ -1,0 +1,18 @@
+RFC 1951 example, symbol 0 code: 2
+RFC 1951 example, symbol 1 code: 6
+RFC 1951 example, symbol 2 code: 1
+RFC 1951 example, symbol 3 code: 5
+RFC 1951 example, symbol 4 code: 3
+RFC 1951 example, symbol 5 code: 0
+RFC 1951 example, symbol 6 code: 7
+RFC 1951 example, symbol 7 code: 15
+counts 1, 1, 2, 0, 3, 5, 8: lengths [5, 5, 4, 0, 3, 2, 1]
+their Kraft sum: 32768
+counts 0, 0, 0, 7: lengths [1, 0, 0, 1]
+counts 0, 0, 0: lengths [1, 1, 0]
+29 Fibonacci counts, limit 15: symbol 0's length: 15
+symbol 28's length under 15: ok
+their Kraft sum: 32768
+lengths fall as counts grow: ok
+19 Fibonacci counts, limit 7: lengths 1 to 7: ok
+their Kraft sum, in units of 2^-7: 128

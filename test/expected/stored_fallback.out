@@ -1,0 +1,4 @@
+1000 random bytes: length: 1005
+its stored block's header: 5 bytes
+   01 e8 03 17 fc
+then the input: ok

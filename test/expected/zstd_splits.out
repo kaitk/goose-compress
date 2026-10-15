@@ -1,0 +1,9 @@
+300000 bytes at level 3, written in pieces of 1000: as one-shot: ok
+after reset, "ab" and a flush: length: 11
+and after a second flush: 11
+300000 bytes at level 3, written in pieces of 131072: as one-shot: ok
+after reset, "ab" and a flush: length: 11
+and after a second flush: 11
+300000 bytes at level 3, written in pieces of 131073: as one-shot: ok
+after reset, "ab" and a flush: length: 11
+and after a second flush: 11

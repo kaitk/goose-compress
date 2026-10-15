@@ -1,0 +1,12 @@
+adler32 of "": 00000001
+adler32 of "Wikipedia": 11e60398
+adler32 of "Wiki", then "pedia": 11e60398
+adler32 of 100000 bytes 0xff: 149a302c
+adler32 of bytes 0 to 255, 40 times: f475ed1e
+the same, split at 1: f475ed1e
+the same, split at 31: f475ed1e
+the same, split at 32: f475ed1e
+the same, split at 33: f475ed1e
+the same, split at 5552: f475ed1e
+the same, split at 5553: f475ed1e
+the same, split at 5600: f475ed1e

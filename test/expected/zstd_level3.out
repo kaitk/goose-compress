@@ -1,0 +1,9 @@
+5-byte words, level 3: 57 bytes
+   28 b5 2f fd 04 38 65 01 00 f8 68 65 6c 6c 6f 41
+   77 6f 72 6c 64 42 43 44 45 46 47 48 49 4a 4b 4c
+   4d 4e 4f 77 6f 72 6c 64 50 0d a4 10 f8 fa 19 f0
+   d5 02 8b 3c a5 04 5f 4d 9d
+level 1: length: 81
+its sequence count: 0
+level 1 after reset: as from a new encoder: ok
+then level 3 after reset: as from a new encoder: ok

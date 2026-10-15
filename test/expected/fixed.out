@@ -1,0 +1,11 @@
+"": 2 bytes
+   03 00
+"a": 3 bytes
+   4b 04 00
+"aaaaaaaaaa": 4 bytes
+   4b 84 03 00
+"abcabcabc": 6 bytes
+   4b 4c 4a 86 20 00
+"hello, hello, hello": 10 bytes
+   cb 48 cd c9 c9 d7 51 40 a6 00
+"hello, hello, hello" at level 9 as at level 1: ok

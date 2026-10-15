@@ -1,0 +1,7 @@
+flush with nothing written: 5 bytes
+   00 00 00 ff ff
+write "hi": bytes out: 0
+flush: 12 bytes
+   00 02 00 fd ff 68 69 00 00 00 ff ff
+finish: 5 bytes
+   01 00 00 ff ff

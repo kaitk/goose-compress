@@ -1,0 +1,11 @@
+flush with nothing written: 5 bytes
+   00 00 00 ff ff
+write "hi": bytes out: 0
+flush: 8 bytes
+   ca c8 04 00 00 00 ff ff
+finish: 2 bytes
+   03 00
+"hello, ", flush: 13 bytes
+   ca 48 cd c9 c9 d7 51 00 00 00 00 ff ff
+then "hello, hello", finish: 3 bytes
+   43 a6 00

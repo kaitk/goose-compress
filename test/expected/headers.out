@@ -1,0 +1,33 @@
+zlib level 0 CMF and FLG: 2 bytes
+   78 01
+zlib level 0 header mod 31: 0
+zlib level 1 CMF and FLG: 2 bytes
+   78 01
+zlib level 1 header mod 31: 0
+zlib level 2 CMF and FLG: 2 bytes
+   78 5e
+zlib level 2 header mod 31: 0
+zlib level 3 CMF and FLG: 2 bytes
+   78 5e
+zlib level 3 header mod 31: 0
+zlib level 4 CMF and FLG: 2 bytes
+   78 5e
+zlib level 4 header mod 31: 0
+zlib level 5 CMF and FLG: 2 bytes
+   78 5e
+zlib level 5 header mod 31: 0
+zlib level 6 CMF and FLG: 2 bytes
+   78 9c
+zlib level 6 header mod 31: 0
+zlib level 7 CMF and FLG: 2 bytes
+   78 da
+zlib level 7 header mod 31: 0
+zlib level 8 CMF and FLG: 2 bytes
+   78 da
+zlib level 8 header mod 31: 0
+zlib level 9 CMF and FLG: 2 bytes
+   78 da
+zlib level 9 header mod 31: 0
+gzip default level XFL: 0
+gzip level 1 XFL: 4
+gzip level 9 XFL: 2

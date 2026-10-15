@@ -1,0 +1,37 @@
+2 matches, level 1: 19 bytes
+   4b 4c 4a 4e 49 4d 4b cf 30 04 31 22 22 a3 c2 8d
+   60 22 00
+2 matches, level 2: the same: ok
+2 matches, level 3: the same: ok
+2 matches, level 4: the same: ok
+2 matches, level 5: the same: ok
+2 matches, level 6: the same: ok
+2 matches, level 7: the same: ok
+2 matches, level 8: the same: ok
+2 matches, level 9: the same: ok
+3 matches, level 1: 28 bytes
+   4b 4c 4a 4e 49 4d 4b cf 30 04 31 22 22 a3 c2 8d
+   40 8c c0 a0 e0 10 63 10 03 24 05 00
+3 matches, level 2: 26 bytes
+   4b 4c 4a 4e 49 4d 4b cf 30 04 31 22 22 a3 c2 8d
+   40 8c c0 a0 e0 10 63 98 14 00
+3 matches, level 3: the same: ok
+3 matches, level 4: the same: ok
+3 matches, level 5: the same: ok
+3 matches, level 6: the same: ok
+3 matches, level 7: the same: ok
+3 matches, level 8: the same: ok
+3 matches, level 9: the same: ok
+lazy, level 1: 18 bytes
+   4b 4c 4a 4e 89 48 4a 4e 49 4d 4b cf 88 04 71 40
+   0c 00
+lazy, level 2: the same: ok
+lazy, level 3: the same: ok
+lazy, level 4: the same: ok
+lazy, level 5: 17 bytes
+   4b 4c 4a 4e 89 48 4a 4e 49 4d 4b cf 88 4c 84 32
+   00
+lazy, level 6: the same: ok
+lazy, level 7: the same: ok
+lazy, level 8: the same: ok
+lazy, level 9: the same: ok

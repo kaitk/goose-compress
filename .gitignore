@@ -5,3 +5,4 @@
 *.pdb
 __pycache__/
 CLAUDE.local.md
+/.claude/worktrees/

@@ -51,5 +51,5 @@ DEFLATE and zstd on the Ryzen, aiming for parity with the C libraries or a decis
 to proxy to them. Task 002, brotli, waits
 on a measurement that shows it's needed. See the [latest results](../docs/results.md)
 for the measured gaps. Task 006 moves the build to Goose releases; its Windows and Linux
-test runs remain. Task 007 moves the tests to Goose's test convention, with a
+test runs remain. Task 007, done, moved the tests to Goose's test convention, with a
 `test/run_tests.py` of its own, as Goose's.

@@ -1,0 +1,9 @@
+gzip level 0 after reset: as from a new encoder: ok
+gzip level 1 after reset: as from a new encoder: ok
+gzip level 6 after reset: as from a new encoder: ok
+zlib level 0 after reset: as from a new encoder: ok
+zlib level 1 after reset: as from a new encoder: ok
+zlib level 6 after reset: as from a new encoder: ok
+raw level 0 after reset: as from a new encoder: ok
+raw level 1 after reset: as from a new encoder: ok
+raw level 6 after reset: as from a new encoder: ok

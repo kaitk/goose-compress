@@ -1,0 +1,7 @@
+one block: 27 bytes
+   28 b5 2f fd 04 38 75 00 00 40 61 62 63 64 65 66
+   67 68 01 00 c1 cb 05 ce 1a 76 51
+the same, a flush, and again: 37 bytes
+   28 b5 2f fd 04 38 74 00 00 40 61 62 63 64 65 66
+   67 68 01 00 c1 cb 05 3d 00 00 08 61 01 00 0d b8
+   02 7b 53 07 18
