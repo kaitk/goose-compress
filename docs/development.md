@@ -25,47 +25,75 @@ Exact hardware, OS, compiler, and library versions for measured runs belong in
 
 ## Set up the Goose compiler
 
-The scripts run the compiler that `GOOSE` names, or `goose` on `PATH` without it, so the
-checkout can live anywhere; this page puts it next to this repository, at `../goose`.
-Leave it on the pinned commit and don't edit it (`AGENTS.md`).
+The scripts use the Goose release pinned in `scripts/goose.sh` (`v2026.1`, 2026-10-15)
+unless told otherwise. The first script that needs the compiler downloads the release's
+archive for the platform from
+[the releases page](https://github.com/aardappel/goose/releases), checks its SHA-256,
+and unpacks it into `build/goose-v2026.1-<platform>/`; later runs reuse it. Run
+`scripts/goose.sh` to fetch it and print the compiler's path. The release needs the Xcode
+command line tools on macOS and the C library's headers on Linux
+([Goose's README](https://github.com/aardappel/goose#install-a-release)). Linux on arm64
+has no release archive, so there the script builds the release's tag from source, as
+`GOOSE_COMMIT` does below.
+
+Use another compiler only when the release can't do the job, such as a Goose fix not
+yet released. Two settings choose one, and the first set wins:
+
+| Setting | Compiler |
+|---|---|
+| `GOOSE` | The binary it names, such as a checkout's build or a release unpacked elsewhere. |
+| `GOOSE_COMMIT` | That commit of `aardappel/goose`, cloned into `build/goose-<commit>/` and built with CMake (and Ninja if installed) on first use. Give the full 40-hex hash; a shallow fetch can't resolve an abbreviated one. |
+
+The release's `stdlib/` under `build/` needs no `exclude`: the repository has no `.build`
+sidecar, and the tests pass with the release unpacked there (2026-10-15). A sidecar
+added later needs `exclude = ["build"]`, as goose-http's has, because Goose collects a
+package's JIT symbol table from every `.goose` file under its root, and the release's
+stdlib declares the runtime's `extern fn`s.
+
+To build a checkout by hand, clone it anywhere and point `GOOSE` at its build. Don't edit
+it (`AGENTS.md`):
 
 ```sh
 git clone -o upstream https://github.com/aardappel/goose.git ../goose
-git -C ../goose checkout 46356c2
 cmake -S ../goose -B ../goose/build-macos -DCMAKE_BUILD_TYPE=Release
 cmake --build ../goose/build-macos -j
 export GOOSE=$PWD/../goose/build-macos/goose
 ```
 
-On Linux, name the build directory `build-linux`. On Windows, build it in PowerShell
-with the Visual Studio Build Tools' CMake, into `build/`:
+On Linux, name the build directory `build-linux`. On Windows, configure with
+`-G "Visual Studio 18 2026"` in PowerShell, with the Visual Studio Build Tools' CMake,
+and build with `--config Release`; the compiler is then
+`..\goose\build\Release\goose.exe`. A checkout's compiler finds the stdlib by walking up
+from its own binary, and a release's sits beside it, so neither needs a setting.
 
-```powershell
-cmake -S ..\goose -B ..\goose\build -G "Visual Studio 18 2026"
-cmake --build ..\goose\build --config Release
-```
-
-The compiler is `../goose/build/Release/goose.exe`. Its `goose build` finds `clang-cl`
-in the Build Tools on its own (`goose toolchain` says which compiler it chose), which
-matters for speed: `simd fn` builds AVX2 and AVX-512 versions only under clang, and MSVC
-ignores it. Run the scripts from Git Bash. The compiler finds the stdlib by walking
-up from its own binary, so a build inside the checkout needs no setting.
+On Windows, `goose build` finds `clang-cl` in the Build Tools on its own
+(`goose toolchain` says which compiler it chose), which matters for speed: `simd fn`
+builds AVX2 and AVX-512 versions only under clang, and MSVC ignores it. Run the scripts
+from Git Bash, where `scripts/goose.sh` fetches the `windows-x64` release.
 
 ### Move the pin
 
-The Goose repository changes daily. Fetch it at the start of a session, and move the pin
-in its own commit with the tests and results that still hold:
+The pin is a Goose release. At the start of a session, check for a newer one:
 
 ```sh
-git -C ../goose fetch upstream
-git -C ../goose log --oneline HEAD..upstream/master
-git -C ../goose checkout upstream/master
-cmake --build ../goose/build-macos -j
+gh release list -R aardappel/goose --limit 3
 ```
 
-Then run `scripts/test.sh`, and update the pin in `README.md` and the setup command above.
-Packages imported by the same program must use a compatible Goose pin, since the
-program builds with one compiler.
+To move to a new release, update `goose_release` and the four archives' SHA-256 sums in
+`scripts/goose.sh`. GitHub lists each asset's digest:
+
+```sh
+gh api repos/aardappel/goose/releases/tags/<tag> -q '.assets[] | "\(.name) \(.digest)"'
+```
+
+Then run `scripts/test.sh`, and update the pin in `README.md` and this page's release
+paths, in its own commit with the tests and results that still hold. Packages imported
+by the same program must use a compatible Goose pin, since the program builds with one
+compiler.
+
+Pin a commit only when a Goose fix that this repository needs isn't in a release yet:
+set `GOOSE_COMMIT` in the scripts' environment, record the commit in the README's Pins
+table with the reason, and return to a release once one includes the fix.
 
 ## Test
 
@@ -123,11 +151,13 @@ program builds with one compiler.
    with seed 0; `--levels`, `--zstd-levels`, `--fuzz N`, and `--seed S` change them.
 
 ```sh
-GOOSE=../goose/build-macos/goose scripts/test.sh
+scripts/test.sh
 ```
 
-It took about 48 s on the M1 Pro and 99 s on the Ryzen under Git Bash, where starting
-a process costs more (2026-10-13). A program run
+`GOOSE` and `GOOSE_COMMIT` pass through to `scripts/test-unit.sh`. It took about 48 s on
+the M1 Pro and 99 s on the Ryzen under Git Bash, where starting a process costs more
+(2026-10-13); 51 s on the M1 Pro with `v2026.1`, its download included (2026-10-15).
+A program run
 through TinyCC compiles at `-O1` without a C compiler, so the unit tests start fast;
 `encode` is built with `goose build` because `roundtrip.py` runs it 3,880 times.
 
@@ -167,7 +197,7 @@ against libzstd, `libzstd-w17`, and klauspost at levels 1 and 3, in place of gzi
 against zlib-ng and libdeflate.
 
 ```sh
-GOOSE=../goose/build-macos/goose bench/build.sh
+bench/build.sh
 bench/run.sh                                # level 0, 10 runs, 7 Silesia files
 LEVELS="1 6 9" RUNS=5 FILES=dickens bench/run.sh
 FORMAT=zlib bench/run.sh                    # level 0 zlib: a copy and Adler-32
@@ -186,8 +216,11 @@ VS="/c/Program Files (x86)/Microsoft Visual Studio/18/BuildTools"
 export PATH="$VS/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin:$PATH"
 export PATH="$VS/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja:$PATH"
 export PATH="$VS/VC/Tools/Llvm/x64/bin:$PATH"
-GOOSE=../goose/build/Release/goose.exe bench/build.sh
+bench/build.sh
 ```
+
+`bench/build.sh` ends by naming the Goose compiler it built `bench` with: the release's
+tag, or a checkout's commit. Record it with the results.
 
 The level is passed to each library as it is. Record results with what `AGENTS.md`
 asks for, under the machine's own section; a new machine gets a section that starts

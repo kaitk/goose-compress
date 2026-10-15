@@ -6,13 +6,15 @@
 # version its go.mod pins; bench/bench.goose with goose build; and the Silesia
 # corpus, checked against its SHA-256.
 #
-# GOOSE names the compiler (default: goose on PATH), CC the C compiler
-# (default: cc, or clang on Windows), GO the Go toolchain (default: go on
-# PATH). On Windows it runs under Git Bash, with CMake and Ninja on PATH.
+# GOOSE or GOOSE_COMMIT names the compiler (default: the pinned release,
+# scripts/goose.sh), CC the C compiler (default: cc, or clang on Windows), GO
+# the Go toolchain (default: go on PATH). On Windows it runs under Git Bash,
+# with CMake and Ninja on PATH.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-goose=${GOOSE:-goose}
+. "$root/scripts/goose.sh"
+goose=$GOOSE
 cc=${CC:-cc}
 go=${GO:-go}
 generator=
@@ -84,4 +86,4 @@ if [ ! -f "$out/corpus/dickens" ]; then
     echo "$SILESIA_SHA256  $out/silesia.zip" | shasum -a 256 -c - >/dev/null
     unzip -q -o "$out/silesia.zip" -d "$out/corpus"
 fi
-echo "built $out"
+echo "built $out with Goose $(goose_version)"

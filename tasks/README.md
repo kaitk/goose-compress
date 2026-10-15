@@ -49,4 +49,5 @@ Task 003 records the earlier DEFLATE tuning; task 005 continues that work for bo
 DEFLATE and zstd on the Ryzen, aiming for parity with the C libraries or a decision
 to proxy to them. Task 002, brotli, waits
 on a measurement that shows it's needed. See the [latest results](../docs/results.md)
-for the measured gaps.
+for the measured gaps. Task 006 moves the build to Goose releases; its Windows and Linux
+test runs remain.

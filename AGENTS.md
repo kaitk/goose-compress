@@ -12,7 +12,7 @@
 - Substantial doc drafts and requested prose reviews:
   `.claude/skills/google-style/SKILL.md`; other writing follows "Writing" below
 - The formats: RFC 1951 (DEFLATE), RFC 1950 (zlib), and RFC 1952 (gzip).
-- The language: the pinned Goose checkout's `docs/tutorial.md`, `docs/goose_spec.md`,
+- The language: the pinned Goose release's `docs/tutorial.md`, `docs/goose_spec.md`,
   and `docs/stdlib.md`. Read the tutorial before writing Goose; check the spec before
   assuming a feature exists.
 
@@ -42,19 +42,20 @@ directory. What only one machine needs, such as where its Goose checkout is, goe
 
 ## Goose, not an addition to Goose
 
-- The Goose repository changes daily. Fetch the Goose checkout `GOOSE` is built from
-  (`../goose` unless `CLAUDE.local.md` says otherwise) at the start of a session and
-  move the pin when it lags (`docs/development.md`, "Move the pin").
-- Don't edit the Goose checkout. When the compiler rejects something it should accept,
+- Build with the official Goose release that `scripts/goose.sh` pins. Check for a newer
+  release at the start of a session and move the pin to it (`docs/development.md`,
+  "Move the pin"). Pin a commit (`GOOSE_COMMIT`) only when a fix this repository needs
+  isn't released yet, and return to a release once one has it (2026-10-15).
+- Don't edit a Goose checkout. When the compiler rejects something it should accept,
   miscompiles, or the stdlib lacks something, reduce it to a minimal program, record it
   in `docs/goose-findings.md`, and work around it here. Report blockers to the maintainer.
-- Every finding names the Goose commit it was found on, the pin at the time. When one
-  lacks it, recover it from this repository's history: the pin in the commit that added
-  the entry.
+- Every finding names the Goose commit it was found on, the pin at the time (for a
+  release, its commit). When one lacks it, recover it from this repository's history:
+  the pin in the commit that added the entry.
 - `docs/goose-findings.md` lists bugs first and feature requests after, each part from
   the least work a fix is expected to take to the most. Place a new entry by that
   order, and delete an entry once the pin has its fix (2026-10-14).
-- Write Goose the way the pinned checkout's `samples/` and `stdlib/` do: flat data,
+- Write Goose the way the pinned release's `samples/` and `stdlib/` do: flat data,
   references into growing arrays, `return ... from` for errors, untyped parameters for
   generics.
 - The package is Goose with no C: hashing, bit-packing, and Huffman tables are the work

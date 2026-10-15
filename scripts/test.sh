@@ -4,12 +4,14 @@
 # (scripts/test-unit.sh), then test/encode.goose built with goose build and
 # its output checked against gzip and Python's zlib (scripts/roundtrip.py).
 #
-# GOOSE names the compiler (default: goose on PATH), and CC the C compiler for
-# goose build (default: the one goose build finds).
+# GOOSE or GOOSE_COMMIT names the compiler (default: the pinned release,
+# scripts/goose.sh), and CC the C compiler for goose build (default: the one
+# goose build finds).
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-goose=${GOOSE:-goose}
+. "$root/scripts/goose.sh"
+goose=$GOOSE
 case $(uname -s) in
 MINGW* | MSYS*) exe=.exe ;;
 *) exe= ;;
