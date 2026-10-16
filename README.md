@@ -132,38 +132,36 @@ mode, and klauspost/compress in Go. Each machine's full tables, setup, and metho
 [docs/results.md](docs/results.md), and each change's measurements in
 [results-history.md](docs/results-history.md).
 
-gzip on a Ryzen 7 5800X3D under Windows 11, at `8ec4538`, over seven Silesia files[^1]:
+gzip on a Ryzen 7 5800X3D under Windows 11, at `v0.1.1` built by Goose `v2026.2`,
+over seven Silesia files[^1]:
 
 | Level | goose | libdeflate | zlib-ng | goose / libdeflate rate | goose output vs libdeflate's |
 |---:|---:|---:|---:|---:|---:|
-| 0 | 2.6–2.8 GB/s | 13–19 GB/s | 14–17 GB/s | 0.14–0.21[^2] | stored |
-| 1 | 110–360 MB/s | 160–650 MB/s | 160–890 MB/s | 0.56–0.66 | −0.1% to +0.2% |
-| 6 | 64–200 MB/s | 72–230 MB/s | 67–210 MB/s | 0.74–0.88 | +0.1% to +4.3% |
-| 9 | 31–86 MB/s | 31–100 MB/s | 28–81 MB/s | 0.85–1.12 | +0.1% to +4.5% |
+| 0 | 2.7–2.9 GB/s | 13–20 GB/s | 15–17 GB/s | 0.14–0.20[^2] | stored |
+| 1 | 100–370 MB/s | 160–650 MB/s | 160–900 MB/s | 0.57–0.65 | −0.1% to +0.2% |
+| 6 | 65–200 MB/s | 74–240 MB/s | 67–215 MB/s | 0.72–0.88 | +0.1% to +4.3% |
+| 9 | 31–83 MB/s | 30–103 MB/s | 27–80 MB/s | 0.80–1.12 | +0.1% to +4.5% |
 
-[^1]: One-shot, the whole file in memory; a cell gives the range over the seven files.
-    Levels 1, 6, and 9 are each file's median of 3 alternating rounds of 5 runs at
-    `8ec4538`, zlib-ng's from the same kind of run at `24ac46b` (level 1) and
-    `9f7a539`; level 0 the median of 10 runs at `6b57c40`, unchanged since.
-    Level 9 is within 1 percent of libdeflate's rate, or faster, on six
-    files of seven; level 1 writes libdeflate's sizes but runs at 0.56 to 0.66 of its
+[^1]: One-shot, the whole file in memory; a cell gives the range over the seven files,
+    each file's median of 10 runs. Level 9 matches or beats libdeflate's rate on six
+    files of seven; level 1 writes libdeflate's sizes but runs at 0.57 to 0.65 of its
     rate.
 [^2]: The level 0 gap is CRC-32, which both libraries compute with a carryless multiply
     that Goose can't express
     (see the compiler findings linked below).
 
-zstd on the same Ryzen, at `7a96425`, against libzstd v1.5.7 and klauspost/compress
+zstd on the same Ryzen, at `v0.1.1`, against libzstd v1.5.7 and klauspost/compress
 v1.20.3, all with the checksum, over the same seven files[^3]:
 
 | Level | goose | libzstd | klauspost | goose / libzstd rate | goose output vs libzstd's |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 260–810 MB/s | 360–1,010 MB/s | 200–2,220 MB/s | 0.72–0.97 | +0.0% to +12.1% |
-| 3 | 160–680 MB/s | 140–820 MB/s | 150–570 MB/s | 0.79–1.09 | +2.5% to +12.8%[^4] |
+| 1 | 250–800 MB/s | 360–1,020 MB/s | 210–2,320 MB/s | 0.70–0.95 | +0.0% to +12.1% |
+| 3 | 150–680 MB/s | 150–820 MB/s | 150–610 MB/s | 0.78–1.04 | +2.6% to +12.8%[^4] |
 
-[^3]: The median of 10 runs. klauspost's 2,220 MB/s is `x-ray`, whose literals it
-    leaves raw; on the other six files it's at most 640 MB/s.
+[^3]: The median of 10 runs. klauspost's 2,320 MB/s is `x-ray`, whose literals it
+    leaves raw; on the other six files it's at most 660 MB/s.
 [^4]: libzstd's level 3 window is 2 MB, the package's 128 KB. Against libzstd at 128 KB,
-    the package's output is 5.8 percent smaller to 0.4 percent larger.
+    the package's output is 5.7 percent smaller to 0.4 percent larger.
 
 The [compiler findings](docs/goose-findings.md#goose-has-no-carryless-multiply)
 explain the CRC-32 limitation. Further performance work is tracked in
