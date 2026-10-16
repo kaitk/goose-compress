@@ -26,11 +26,11 @@ Exact hardware, OS, compiler, and library versions for measured runs belong in
 
 ## Set up the Goose compiler
 
-The scripts use the Goose release pinned in `scripts/goose.sh` (`v2026.1`, 2026-10-15)
+The scripts use the Goose release pinned in `scripts/goose.sh` (`v2026.2`, 2026-10-16)
 unless told otherwise. The first script that needs the compiler downloads the release's
 archive for the platform from
 [the releases page](https://github.com/aardappel/goose/releases), checks its SHA-256,
-and unpacks it into `build/goose-v2026.1-<platform>/`; later runs reuse it. Run
+and unpacks it into `build/goose-v2026.2-<platform>/`; later runs reuse it. Run
 `scripts/goose.sh` to fetch it and print the compiler's path. The release needs the Xcode
 command line tools on macOS and the C library's headers on Linux
 ([Goose's README](https://github.com/aardappel/goose#install-a-release)). Linux on arm64

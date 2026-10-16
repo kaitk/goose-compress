@@ -210,7 +210,7 @@ tasks/               task tracking (tasks/README.md)
 
 | What | Pin | Why |
 |---|---|---|
-| Goose compiler | `aardappel/goose` release `v2026.1` (`ac759c3`), which the scripts fetch ([setup](docs/development.md#set-up-the-goose-compiler)) | An official release builds the same on every platform; a commit is pinned only for a fix not yet released. `v2026.1` is `46356c2` plus the release packaging and where the compiler looks for its packages and the macOS SDK, so results at `46356c2` stand |
+| Goose compiler | `aardappel/goose` release `v2026.2` (`3ee3871`), which the scripts fetch ([setup](docs/development.md#set-up-the-goose-compiler)) | An official release builds the same on every platform; a commit is pinned only for a fix not yet released. `v2026.1` is `46356c2` plus the release packaging and where the compiler looks for its packages and the macOS SDK, so results at `46356c2` stand |
 | Benchmark libraries | libdeflate v1.26, zlib-ng 2.3.3, and libzstd v1.5.7 in `bench/build.sh`; klauspost/compress v1.20.3 in `bench/klauspost/go.mod` | Each result names the versions it ran against |
 
 Move the pin in its own commit, with the tests and results that still hold
