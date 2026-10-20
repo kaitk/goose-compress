@@ -256,7 +256,7 @@ bench/build.sh
 `bench/build.sh` ends by naming the Goose compiler it built `bench` with: the release's
 tag, or a checkout's commit. Record it with the results.
 
-The level is passed to each library as it is. Record results with what `AGENTS.md`
+The level is passed to each library as it is. Record results with what `agents/benchmarks.md`
 asks for, under the machine's own section; a new machine gets a section that starts
 with its hardware, OS, compiler, and library builds. `docs/results.md` holds each
 machine's latest full run only: when a new one replaces it, move the old one to
