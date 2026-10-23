@@ -90,7 +90,7 @@ class CC:
 
     def compile_object(self, source, obj, level):
         if self.msvc:
-            return run([self.path, *self.opt(level), "/c", source, f"/Fo:{obj}"])
+            return run([self.path, *self.opt(level), "/std:c11", "/c", source, f"/Fo:{obj}"])
         return run([self.path, *self.opt(level), "-c", source, "-o", obj])
 
     def link(self, sources, exe, level):
@@ -175,29 +175,33 @@ class Tests:
                     self.report(f, "--check")
 
     def runtime(self):
-        """{level: the Goose runtime's object, compiled at that level}."""
+        """{level: the objects of the Goose runtime and the package's shim
+        (compress.build's c_sources), compiled at that level}."""
         OUT.mkdir(parents=True, exist_ok=True)
         source = OUT / "goose_runtime.c"
         code, out, err = run([self.goose, "--emit-runtime", source])
         if code != 0:
             sys.exit(f"goose --emit-runtime failed:\n{out}{err}")
+        sources = [source, ROOT / "shim" / "crc32.c"]
         objects = {}
         for level in self.levels:
-            obj = OUT / f"O{level}" / ("goose_runtime" + (".obj" if self.cc.msvc else ".o"))
-            obj.parent.mkdir(parents=True, exist_ok=True)
-            objects[level] = (obj, self.pool.submit(self.cc.compile_object, source, obj, level))
-        for level, (obj, future) in objects.items():
+            for s in sources:
+                obj = OUT / f"O{level}" / (s.stem + (".obj" if self.cc.msvc else ".o"))
+                obj.parent.mkdir(parents=True, exist_ok=True)
+                objects[level, s] = (obj, self.pool.submit(self.cc.compile_object, s, obj, level))
+        built = {level: [] for level in self.levels}
+        for (level, s), (obj, future) in objects.items():
             code, out, err = future.result()
             if code != 0:
-                sys.exit(f"the runtime didn't compile at -O{level}:\n{out}{err}")
-            objects[level] = obj
-        return objects
+                sys.exit(f"{s.name} didn't compile at -O{level}:\n{out}{err}")
+            built[level].append(obj)
+        return built
 
     def build_and_run(self, test, level, runtime):
         """(build failure, or None; exit code, stdout, stderr of the run)."""
         cfile = OUT / f"O{level}" / f"{test.stem}.c"
         exe = cfile.with_suffix(EXE)
-        code, out, err = self.cc.link([cfile, runtime], exe, level)
+        code, out, err = self.cc.link([cfile, *runtime], exe, level)
         if code != 0:
             return out + err, None
         return None, run([exe])

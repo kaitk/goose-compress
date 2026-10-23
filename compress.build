@@ -1,0 +1,10 @@
+// The package's C, until Goose has a carryless multiply (docs/decisions.md):
+// CRC-32 folded with PCLMULQDQ on x86-64. The function that uses the
+// instructions carries its own target attribute, so the C needs no -march
+// and runs on any CPU of its architecture.
+c_sources = ["shim/crc32.c"];
+// The shim's _Static_assert is C11, which MSVC takes only when asked.
+c_flags_msvc = ["/std:c11"];
+// build/ holds the compiler scripts/goose.sh fetches, and bench/compare.sh's
+// extracted packages.
+exclude = ["build"];

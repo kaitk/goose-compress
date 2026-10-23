@@ -21,11 +21,25 @@ fn crc_table() -> u32[4096] {
     return t;
 }
 
+// shim/crc32.c: the CPU's carryless multiply, which Goose lacks.
+extern "gc_crc_instructions" fn crc_instructions() -> bool;
+extern "gc_crc32_clmul" fn crc32_clmul(crc: u32, data: const u8[:]) -> u32;
+
+// From 64 bytes, on a CPU with a carryless multiply, the shim folds the
+// whole 16-byte blocks, and the tables take the rest.
+fn crc32(crc: u32, data: const u8[:]) -> u32 {
+    if data.len >= 64 && crc_instructions() {
+        let n = data.len - data.len % 16;
+        return crc32_tables(~crc32_clmul(~crc, data[0..n]), data[n..]);
+    }
+    return crc32_tables(crc, data);
+}
+
 // From 2 KB, the two halves of the input run as two chains of lookups at
 // once, where one chain waits on each 16 bytes' result before the next. The
 // halves' CRCs are then joined as zlib's crc32_combine joins them: the
 // first's times x^(8 n) modulo the polynomial, for the second's n bytes.
-fn crc32(crc: u32, data: const u8[:]) -> u32 {
+fn crc32_tables(crc: u32, data: const u8[:]) -> u32 {
     let half = (data.len / 32) * 16;
     var a = ~crc;
     var i = 0;
