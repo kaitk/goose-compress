@@ -856,6 +856,88 @@ to 21.69 and at level 6 from 38.36 to 32.99. CRC-32 alone, a program calling
 0.46 µs against 0.64, 8,397 bytes 1.87 against 2.69, and 65,536 bytes 13.1 against
 20.8; 1,024 and 1,500 bytes, below the two halves' threshold, didn't change.
 
+### Level 1's `load32` and next bucket, not kept
+
+2026-10-23, Apple M1 Pro, macOS 26.3.1, Goose `v2026.3` with Apple clang 21.0.0,
+`goose build` defaults. A Linux x86-64 profile of a server that gzips small JSON
+bodies at level 1 put `match_fast` at 32.9 percent of its time and `load32`, a call
+there, at 5.9. Two changes were tried against `7e9e2d8`, each by
+`bench/compare.sh` (`docs/development.md`, "Benchmark"): the bodies in `bench/json/`
+in 5 alternating rounds, and Silesia files in 3 rounds of `RUNS` 3 or 5. Other work
+kept the load average between 10 and 27. Every build gave the same output, byte for
+byte, as `7e9e2d8`'s on each input and level.
+
+- `8378681` (branch `match-fast-load32`): `load32` an `inline fn`. On this machine,
+  clang already inlines the C function, which has no symbol in the binary; Goose's
+  own inlining gives other C, and it is slower everywhere it is used.
+- `e7f03e2` (branch `match-fast-next-bucket`): `match_fast` finds the bucket of
+  `p + 1` before it reads `p`'s, as libdeflate's `ht_matchfinder` does, so the read
+  doesn't wait on a hash. After a match, the bucket of `p + len` is found again.
+  Goose has no prefetch, so libdeflate's prefetch of that bucket has no counterpart.
+- `eed8bf9`, on `e7f03e2`: the loop that inserts the positions a match skips carries
+  the next bucket too, so no bucket is found twice.
+
+The bodies, in µs a call:
+
+| Body | Level | Bytes out | `7e9e2d8` | `8378681` |
+|---|---:|---:|---:|---:|
+| 100 bytes | 1 | 108 | 2.16 | 2.17 |
+| 100 bytes | 6 | 108 | 2.33 | 2.35 |
+| 25 items | 1 | 1,008 | 11.27 | 11.42 |
+| 25 items | 6 | 938 | 17.18 | 19.26 |
+| 40 items | 1 | 1,420 | 15.46 | 16.01 |
+| 40 items | 6 | 1,273 | 25.41 | 29.02 |
+| 50 items | 1 | 1,703 | 18.32 | 18.94 |
+| 50 items | 6 | 1,483 | 31.43 | 36.40 |
+
+| Body | Level | Bytes out | `7e9e2d8` | `e7f03e2` | `eed8bf9` |
+|---|---:|---:|---:|---:|---:|
+| 100 bytes | 1 | 108 | 2.17 | 2.17 | 2.15 |
+| 25 items | 1 | 1,008 | 11.02 | 11.21 | 11.53 |
+| 40 items | 1 | 1,420 | 15.56 | 15.93 | 16.42 |
+| 50 items | 1 | 1,703 | 18.54 | 18.98 | 19.75 |
+
+`e7f03e2` against `7e9e2d8` alone, run twice more, the second time with `e7f03e2`
+first in each round: 25 items 11.03 against 11.23, then 10.93 against 11.18; 50 items
+18.49 against 18.97, then 18.41 against 18.93.
+
+Silesia, in MB/s:
+
+| File | Level | `7e9e2d8` | `8378681` |
+|---|---:|---:|---:|
+| `dickens` | 1 | 148.9 | 147.8 |
+| `dickens` | 6 | 64.2 | 58.3 |
+| `dickens` | 9 | 34.5 | 31.0 |
+| `x-ray` | 1 | 92.1 | 93.1 |
+| `x-ray` | 6 | 87.3 | 86.4 |
+| `x-ray` | 9 | 82.6 | 81.2 |
+| `xml` | 1 | 316.7 | 305.6 |
+| `xml` | 6 | 171.6 | 155.6 |
+| `xml` | 9 | 69.5 | 61.7 |
+| `mozilla` | 1 | 163.3 | 161.3 |
+| `mozilla` | 6 | 100.3 | 91.7 |
+| `mozilla` | 9 | 28.8 | 25.7 |
+| `dickens`, zstd | 1 | 271.9 | 265.5 |
+| `dickens`, zstd | 3 | 155.4 | 155.5 |
+| `x-ray`, zstd | 1 | 695.9 | 693.3 |
+| `x-ray`, zstd | 3 | 146.4 | 147.8 |
+
+| File | Level | `7e9e2d8` | `e7f03e2` | `eed8bf9` |
+|---|---:|---:|---:|---:|
+| `dickens` | 1 | 147.4 | 149.7 | 156.5 |
+| `x-ray` | 1 | 92.3 | 98.8 | 97.3 |
+| `xml` | 1 | 312.2 | 315.5 | 317.7 |
+| `mozilla` | 1 | 162.7 | 168.7 | 167.8 |
+
+The inline `load32` costs 3 to 15 percent at levels 6 and 9 and up to 3 at level 1.
+The next bucket found early gains 1 to 7 percent on Silesia at level 1, but costs the
+bodies 2 to 3 percent, and carrying it through skipped positions 4 to 7. A body
+touches few of the table's lines, so its reads likely hit the cache, where the
+extra hash is only cost; whether the M1's large out-of-order window also hides the
+wait wasn't measured. Neither is kept, since the bodies are what the change was for.
+libdeflate, tuned on x86-64, finds the next bucket early, so both variants are left
+on their branches to measure there.
+
 ## AMD Ryzen 7 5800X3D, Windows
 
 - AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,
