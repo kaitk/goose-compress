@@ -23,6 +23,14 @@ hardware, tools, corpus, commands, and run counts:
 The [measurements behind each change](../docs/results-history.md#task-005-steps-2-and-3-simd-fn-and-the-codegen-ceiling)
 record the hand-fixed C, matcher ports, code-generation experiments, and zstd tuning.
 
+## Measured for every matcher change
+
+A server gzips small bodies at level 1, so each matcher or block-coding change is
+measured on the small JSON bodies in `bench/json/` as well as on Silesia, by
+`bench/compare.sh` before and after it (requested 2026-10-23). A change that pays on
+Silesia but costs the bodies isn't kept without a recorded reason. Their output
+sizes are `test/deflate/json_bodies.goose`'s golden file.
+
 ## Remaining work
 
 - zstd: FSE steps and `put_seqs`, and Huffman coding of literals. At `e1a9800`, they
