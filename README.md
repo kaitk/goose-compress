@@ -37,7 +37,7 @@ and each block's literals and sequences are coded with tables chosen for it.
 
 ```goose
 import std;
-import compress from "github.com/kaitk/goose-compress@v0.1.1";
+import compress from "github.com/kaitk/goose-compress@v0.1.2";
 
 fn main() {
     var gz: u8[>..] = [];
@@ -59,7 +59,7 @@ fn main() {
 goose build hello.goose
 ```
 
-The tag `v0.1.1` has everything in the tables above. The package needs no C compiler of
+The tag `v0.1.2` has everything in the tables above. The package needs no C compiler of
 its own and no other package.
 
 ## API
