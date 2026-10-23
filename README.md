@@ -3,7 +3,8 @@
 Compression package for [Goose](https://github.com/aardappel/goose): gzip, zlib, raw
 DEFLATE, and zstd encoders, bytes in and bytes out, with a streaming encoder that
 flushes. Pure
-Goose, with no C ([architecture](docs/architecture.md)). Its first user is
+Goose, with no C ([architecture](docs/architecture.md)), but for CRC-32's carryless
+multiply on x86-64 ([decisions](docs/decisions.md)). Its first user is
 [goose-http](https://github.com/kaitk/goose-http), which compresses responses with it.
 
 For DEFLATE, level 1 finds LZ77 matches in 2-entry hash buckets; levels 2 to 9
