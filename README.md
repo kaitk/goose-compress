@@ -60,8 +60,10 @@ fn main() {
 goose build hello.goose
 ```
 
-The tag `v0.1.2` has everything in the tables above. The package needs no C compiler of
-its own and no other package.
+The tag `v0.1.2` has everything in the tables above. The package needs no other
+package. Its one C file, the CRC-32 shim, is built through `compress.build` by the C
+compiler `goose build` already uses, and CPUs without a carryless multiply take the
+Goose tables ([decisions](docs/decisions.md)).
 
 ## API
 

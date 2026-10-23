@@ -136,4 +136,8 @@ the CRC is about 0.36 ms of each MB at level 1, 5 to 14 percent of its time on S
 Workaround: slice-by-16, 16 table lookups for 16 bytes from a 16 KB table (task 001
 step 4). On an M1 Pro, level 0 on `dickens` and `x-ray` went from 346 MB/s to 2.8-2.9
 GB/s, and slice-by-8 reached 1.8 GB/s (`build/bench/bench 0 FILE 5`, median of 5 runs,
-best of 3 rounds, 2026-10-12).
+best of 3 rounds, 2026-10-12). Then, from 64 bytes up on x86-64 with PCLMULQDQ and
+arm64 with PMULL, `shim/crc32.c` folds the CRC in C, built through `compress.build`,
+with the tables kept for other CPUs and `GOOSE_COMPRESS_PORTABLE=1`
+([decisions](decisions.md), [results](results-history.md#crc-32-on-pmull),
+2026-10-23). The shim stays until Goose has a carryless multiply.

@@ -1,6 +1,9 @@
 # Development
 
-The package is Goose with no C, so it builds wherever the Goose compiler does. Tests and
+The package is Goose but for CRC-32's carryless multiply, `shim/crc32.c`, which
+`compress.build` compiles with the C compiler `goose build` uses; other CPUs, and
+`GOOSE_COMPRESS_PORTABLE=1`, take the Goose tables
+([decisions](decisions.md#settled)). It builds wherever the Goose compiler does. Tests and
 benchmarks have run on macOS and on Windows under Git Bash (2026-10-14); they need a
 POSIX shell, Python 3.14 or later, `gzip`, the `zstd` command, and Go for
 `bench/build.sh`, and should run unchanged on Linux. Both DEFLATE and zstd benchmarks
