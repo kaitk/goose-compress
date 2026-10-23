@@ -182,11 +182,15 @@ class Tests:
         code, out, err = run([self.goose, "--emit-runtime", source])
         if code != 0:
             sys.exit(f"goose --emit-runtime failed:\n{out}{err}")
-        sources = [source, ROOT / "shim" / "crc32.c"]
+        build = (ROOT / "compress.build").read_text(encoding="utf-8")
+        shims = re.search(r"^c_sources = \[(.*)\];", build, re.MULTILINE)[1]
+        sources = [source, *(ROOT / s for s in re.findall(r'"([^"]+)"', shims))]
         objects = {}
         for level in self.levels:
             for s in sources:
-                obj = OUT / f"O{level}" / (s.stem + (".obj" if self.cc.msvc else ".o"))
+                # Apart from the tests', which MSVC names after each test, as
+                # checksums/crc32's would be shim/crc32.c's.
+                obj = OUT / f"O{level}" / "shim" / (s.stem + (".obj" if self.cc.msvc else ".o"))
                 obj.parent.mkdir(parents=True, exist_ok=True)
                 objects[level, s] = (obj, self.pool.submit(self.cc.compile_object, s, obj, level))
         built = {level: [] for level in self.levels}
