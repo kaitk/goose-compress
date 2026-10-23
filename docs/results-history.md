@@ -1897,3 +1897,58 @@ faster at level 1. Level 3's output is 0.3251 of the 12-file corpus, against lib
 0.3326 with a 128 KB window. The package writes 2.5 to 12.8 percent more than
 libzstd on the seven rate-test files. At level 3, libzstd is 1.11 to 1.26 times faster
 on six files; the package is 1.09 times faster on `x-ray`.
+
+## AMD Ryzen 7 5800X3D, WSL2
+
+- AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads), Windows 11, Ubuntu 26.04.1 in
+  WSL2, kernel 6.18.54.1-microsoft-standard-WSL2.
+- Goose `v2026.3`, `goose build` defaults, with `CC=gcc`: gcc 15.2.0
+  (Ubuntu 15.2.0-16ubuntu1), the compiler HttpArena builds its servers with.
+- Run from a clone on WSL's own filesystem. No other benchmark ran.
+
+### Level 1's `load32` and next bucket, with gcc
+
+2026-10-23, the [M1 Pro's comparison](#level-1s-load32-and-next-bucket-not-kept)
+again, with gcc on x86-64, where a server's profile showed `load32` as a symbol of its
+own, not inlined. `bench/compare.sh` at `208fe93` (branch `match-fast`), every build
+byte-identical to `7e9e2d8`:
+
+```sh
+CC=gcc ROUNDS=2 LEVELS="1 6" bench/compare.sh 7e9e2d8 match-fast-load32 e7f03e2 match-fast-next-bucket
+CC=gcc ROUNDS=1 BODIES= FILES="build/bench/corpus/dickens build/bench/corpus/x-ray" LEVELS="1 6" bench/compare.sh 7e9e2d8 match-fast-load32 e7f03e2
+```
+
+`match-fast-load32` is `8378681`, `match-fast-next-bucket` `eed8bf9`. The load average
+was 1.2 to 1.5. The bodies, in µs a call:
+
+| Body | Level | Bytes out | `7e9e2d8` | `8378681` | `e7f03e2` | `eed8bf9` |
+|---|---:|---:|---:|---:|---:|---:|
+| 100 bytes | 1 | 108 | 2.71 | 2.65 | 2.79 | 2.80 |
+| 100 bytes | 6 | 108 | 3.03 | 2.92 | 3.02 | 3.02 |
+| 25 items | 1 | 1,008 | 17.79 | 13.50 | 19.04 | 19.23 |
+| 25 items | 6 | 938 | 29.59 | 23.26 | 29.68 | 29.32 |
+| 40 items | 1 | 1,420 | 26.27 | 19.62 | 28.22 | 28.72 |
+| 40 items | 6 | 1,273 | 47.25 | 35.02 | 49.75 | 45.78 |
+| 50 items | 1 | 1,703 | 32.45 | 23.31 | 35.24 | 36.35 |
+| 50 items | 6 | 1,483 | 60.78 | 43.38 | 61.69 | 58.90 |
+
+Silesia, in MB/s:
+
+| File | Level | `7e9e2d8` | `8378681` | `e7f03e2` |
+|---|---:|---:|---:|---:|
+| `dickens` | 1 | 125.5 | 144.5 | 118.0 |
+| `dickens` | 6 | 48.7 | 58.4 | 49.7 |
+| `x-ray` | 1 | 83.6 | 96.2 | 87.0 |
+| `x-ray` | 6 | 73.9 | 82.4 | 73.5 |
+
+The cells within 3 percent of `7e9e2d8`, one round more each, at a load average of 1.0:
+100 bytes at level 1, 2.79 against `8378681`'s 2.64, `e7f03e2`'s 2.79, and `eed8bf9`'s
+2.79; at level 6, 3.06 against 2.93, 3.02, and 3.04; 25 and 50 items at level 6, 29.44
+and 60.43 against `e7f03e2`'s 29.32 and 59.12 and `eed8bf9`'s 29.41 and 57.49;
+`dickens` and `x-ray` at level 6, 50.9 and 75.7 MB/s against `e7f03e2`'s 52.5 and 74.7.
+
+With gcc, the inline `load32` wins everywhere measured: 24 to 28 percent off the
+bodies of 25 to 50 items at level 1 and 21 to 29 percent at level 6, 4 to 5 percent off
+100 bytes, and 12 to 20 percent more MB/s on Silesia. gcc doesn't inline the C `load32`
+that Apple clang does. The next bucket found early costs the bodies 3 to 12 percent at
+level 1, as on the M1 Pro, and is within 3 percent at level 6.
