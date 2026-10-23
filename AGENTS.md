@@ -69,12 +69,16 @@ Several agents work in these repositories at once (2026-10-20).
   `docs/goose-findings.md` as `agents/goose.md` says, and report blockers to the
   maintainer.
 
-## Goose, with no C
+## Goose, with one C shim
 
 - The package is Goose with no C: hashing, bit-packing, and Huffman tables are the work
   that measuring Goose is about. Other languages belong in `bench/` only, as the
   languages of the libraries the package is measured against: C for libdeflate, zlib-ng,
   and libzstd, and Go for klauspost/compress.
+- The one exception is CRC-32's carryless multiply, `shim/crc32.c`, built through
+  `compress.build`, until Goose has the intrinsic
+  ([decisions](docs/decisions.md), [findings](docs/goose-findings.md#goose-has-no-carryless-multiply)).
+  The Goose tables stay as its fallback. Any other C needs a decision of its own.
 
 ## Code conventions
 
