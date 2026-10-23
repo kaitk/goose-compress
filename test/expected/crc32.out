@@ -8,6 +8,7 @@ the same, split at 15: bbce3b9d
 the same, split at 16: bbce3b9d
 the same, split at 17: bbce3b9d
 the same, split at 5000: bbce3b9d
+crc32 of 0 to 300 random bytes from 16 starts: ok
 crc32 of 2015 random bytes: 4171b52a
 the same, from the crc32 of its first 7: 4171b52a
 crc32 of 2047 random bytes: cc6543f7

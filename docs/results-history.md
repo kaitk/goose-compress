@@ -938,6 +938,38 @@ wait wasn't measured. Neither is kept, since the bodies are what the change was 
 libdeflate, tuned on x86-64, finds the next bucket early, so both variants are left
 on their branches to measure there.
 
+### CRC-32 on PMULL
+
+2026-10-23, branch `crc-clmul` against `e762653` (`origin/main`, CRC-32 on Goose's
+tables), Goose `v2026.3` with Apple clang 21.0.0, `goose build` defaults; macOS 26.3.1.
+`crc-clmul` folds CRC-32 with `PMULL` in `shim/crc32.c`
+([decisions](decisions.md)). `LEVELS="0 1" ROUNDS=3
+FILES=build/bench/corpus/dickens bench/compare.sh e762653 .`: the bodies are those of
+[the section above](#small-json-bodies-reset-huffman-codes-level-1s-loop-and-crc-32),
+timed as there, in µs a call; `dickens` is the median of 5 runs, in MB/s; each cell is
+the best of 3 rounds, alternating with the other build. The output is the same,
+byte for byte. Other work kept the 1-minute load average between 4.5 and 4.8.
+
+| Input | Level | Bytes out | Unit | `e762653` | `crc-clmul` | Change |
+|---|---:|---:|---|---:|---:|---:|
+| 100 bytes | 0 | 123 | µs a call | 0.06 | 0.06 | 0% |
+| 100 bytes | 1 | 108 | µs a call | 2.13 | 2.12 | 0% |
+| 25 items | 0 | 4,213 | µs a call | 1.24 | 0.37 | −70% |
+| 25 items | 1 | 1,008 | µs a call | 10.77 | 9.89 | −8% |
+| 40 items | 0 | 6,730 | µs a call | 1.80 | 0.51 | −72% |
+| 40 items | 1 | 1,420 | µs a call | 15.21 | 13.77 | −9% |
+| 50 items | 0 | 8,420 | µs a call | 2.23 | 0.65 | −71% |
+| 50 items | 1 | 1,703 | µs a call | 18.18 | 16.39 | −10% |
+| `dickens` | 0 | 10,193,244 | MB/s | 4,277.1 | 16,987.4 | 3.97× |
+| `dickens` | 1 | 4,219,080 | MB/s | 149.0 | 153.5 | +3% |
+
+Level 0 is a copy and CRC-32, and runs 3.4 to 4.0 times as fast from 4 KB up.
+CRC-32 is the same on both paths, and equal to Python's `zlib.crc32`, on all 12
+Silesia files, whole, from each start offset 1 to 15, and over random cuts. At
+level 1 the bodies take 8 to 10 percent less time; `dickens`, where matching
+dominates, gains 3 percent. The 100-byte body folds one 64-byte block and is
+unchanged.
+
 ## AMD Ryzen 7 5800X3D, Windows
 
 - AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,

@@ -23,16 +23,22 @@ users, is [architecture](architecture.md). Measurements are recorded in
   its version in `go.mod`, and `bench/build.sh` builds it with `go build`. The package
   itself stays Goose with no C (task 004 step 6, 2026-10-13).
 - **CRC-32 on the CPU's carryless multiply, in C for now.** On x86-64 with PCLMULQDQ
-  and SSE4.1, `crc32` folds 64 bytes and up with `shim/crc32.c`, which
-  `compress.build` compiles, and the slice-by-16 tables take the rest and every
-  other CPU. The CPU is checked once at run time, and `GOOSE_COMPRESS_PORTABLE=1`
-  forces the tables, so `scripts/test.sh` runs on either path. This replaces "Goose with
-  no C" for CRC-32 only, until Goose has a carryless multiply
-  ([findings](goose-findings.md#goose-has-no-carryless-multiply)); goose-hash's SHA
-  shim is the model. With gcc on a Ryzen 7 5800X3D, level 0 runs 2.8 times as fast on
-  `dickens` and 35 to 38 percent faster on the 4 to 8 KB JSON bodies; level 1 is 4 to 6
-  percent faster on the bodies and unchanged on `dickens`. The trade-off: a C compiler
-  for one function, and an arm64 `PMULL` path still to write (2026-10-23).
+  and SSE4.1, and on arm64 with PMULL, `crc32` folds 64 bytes and up with
+  `shim/crc32.c`, which `compress.build` compiles, and the slice-by-16 tables take the
+  rest and every other CPU. The CPU is checked once at run time, as goose-hash checks
+  for its SHA instructions: CPUID on x86-64, `getauxval` on Linux arm64, and
+  `IsProcessorFeaturePresent` on Windows arm64; macOS arm64 always has PMULL.
+  `GOOSE_COMPRESS_PORTABLE=1` forces the tables, so `scripts/test.sh` runs on either
+  path. This replaces "Goose with no C" for CRC-32 only, until Goose has a carryless
+  multiply ([findings](goose-findings.md#goose-has-no-carryless-multiply)); goose-hash's
+  SHA shim is the model. With gcc on a Ryzen 7 5800X3D, level 0 runs 2.8 times as fast
+  on `dickens` and 35 to 38 percent faster on the 4 to 8 KB JSON bodies; level 1 is 4 to
+  6 percent faster on the bodies and unchanged on `dickens`. With Apple clang on an M1
+  Pro, level 0 runs 4.0 times as fast on `dickens` and 3.4 to 3.5 times on the bodies;
+  level 1 takes 8 to 10 percent less time on the bodies and runs 3 percent faster on
+  `dickens`
+  ([results](results-history.md#crc-32-on-pmull)). The trade-off: a C compiler for one
+  function (2026-10-23).
 - **Encoding only.** Decoding is out of scope for now. goose-http doesn't decode request
   bodies, and accepting them needs limits against decompression bombs (2026-10-12).
 - **Bytes in, bytes out, streaming with flush.** A one-shot `compress`, and an `Encoder`
