@@ -286,8 +286,8 @@ fn better(len: i64, dist: i64, cur: i64, cur_dist: i64, threshold: i64) -> bool 
     return len >= cur && 4 * (len - cur) + log2(cur_dist) - log2(dist) > threshold;
 }
 
-// The base-2 logarithm of a distance, rounded down, from a table: std's clz is
-// a loop on x86-64 (see LEN_TAB).
+// The base-2 logarithm of a distance, rounded down, from a table, as the
+// length and distance codes are (docs/decisions.md).
 fn log2(d: i64) -> i64 {
     return if d >= 256 { 8 + LOG2[(d >> 8) & 255] } else { LOG2[d & 255] };
 }
@@ -436,8 +436,8 @@ fn load32(s: const u8[:], i: i64) -> u32 {
 
 // Slicing both runs first checks their bounds once, not at each byte. It
 // compares 8 bytes at a time, and finds the first that differs by a de Bruijn
-// multiply: std's ctz is a loop on x86-64. Inlined: as a call it costs the
-// matchers more than the 8-byte compare gains.
+// multiply, which measured faster here than std's ctz. Inlined: as a call it
+// costs the matchers more than the 8-byte compare gains.
 inline fn match_len(win: const u8[:], a: i64, b: i64, most: i64) -> i64 {
     let x = win[a..a + most];
     let y = win[b..b + most];
