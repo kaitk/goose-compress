@@ -273,6 +273,27 @@ with `goose build -o`, and run them in alternating rounds on the same files: the
 libraries' rates varied about 4 percent between sessions, and two builds of the same
 code about 1 percent within one.
 
+`bench/compare.sh` does that for any commits, a branch, or `.` for the working tree.
+It builds this checkout's `bench/json.goose`, `bench/bench.goose`, and
+`test/encode.goose` against each one's package, stops if any gives other output than
+the first, and prints a table of the best round for each input, build, and level, with
+the load average over the rounds. The small bodies in `bench/json/` are JSON
+responses of the shape HttpArena's `/json/:count` asks for, 25, 40, and 50 items, and
+the first 100 bytes of a one-item one:
+
+```sh
+bench/compare.sh BEFORE AFTER                            # the bodies at level 1
+LEVELS="1 6" ROUNDS=5 bench/compare.sh BEFORE AFTER
+BODIES= FILES="build/bench/corpus/dickens build/bench/corpus/x-ray" \
+    bench/compare.sh BEFORE AFTER                        # Silesia files, in MB/s
+BODIES= FILES=build/bench/corpus/dickens FORMAT=zstd LEVELS="1 3" \
+    bench/compare.sh BEFORE AFTER
+```
+
+It needs only Git, a POSIX shell, and the compiler, so it runs from Git Bash on
+Windows too; `FILES` needs `bench/build.sh`'s corpus. Git Bash has no load average,
+so the Load column shows `-` there.
+
 ### Profile
 
 `goose build` binaries keep their symbols, so macOS's `sample` profiles them while
