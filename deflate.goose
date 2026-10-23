@@ -429,7 +429,7 @@ fn hash4(v: u32) -> i64 {
     return (v * 0x9E3779B1) >> (32 - HASH_BITS);
 }
 
-fn load32(s: const u8[:], i: i64) -> u32 {
+inline fn load32(s: const u8[:], i: i64) -> u32 {
     let c = s[i..i + 4];
     return c[0] | (c[1] as u32) << 8 | (c[2] as u32) << 16 | (c[3] as u32) << 24;
 }
