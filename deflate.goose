@@ -158,19 +158,23 @@ fn lz_match(z: Lz&, out: u8[>..]&, flushing: bool) {
 // 2 latest offsets, newest first. The newer candidate is extended whole; the
 // older is tried too unless that gave FAST_NICE, and the longer match is taken.
 fn match_fast(z: Lz&, out: u8[>..]&, end: i64) {
-    while z.pos < end {
-        let p = z.pos;
+    // The position, fill, and base in locals, which the loop keeps in
+    // registers; z.pos is stored before anything that may end the block.
+    let fill = z.fill;
+    let base = z.base;
+    var p = z.pos;
+    while p < end {
         var len = 0;
         var dist = 0;
-        if p + 4 <= z.fill {
+        if p + 4 <= fill {
             let v = load32(z.win, p);
             let b = bucket(v);
-            let here = z.base + p as! u32;
+            let here = base + p as! u32;
             let c0 = z.head[b];
             let c1 = z.head[b + 1];
             z.head[b] = here;
             z.head[b + 1] = c0;
-            let most = min(MAX_MATCH, z.fill - p);
+            let most = min(MAX_MATCH, fill - p);
             let reach = min(WSIZE, p) as! u64;
             let d0: i64 = here - c0;
             // The older candidate is out of reach whenever the newer one is.
@@ -192,16 +196,28 @@ fn match_fast(z: Lz&, out: u8[>..]&, end: i64) {
             }
         }
         if len >= MIN_MATCH {
-            add_match(z, out, dist, len);
-            for i in p + 1..min(p + len, z.fill - 3) {
+            for i in p + 1..min(p + len, fill - 3) {
                 let bi = bucket(load32(z.win, i));
                 z.head[bi + 1] = z.head[bi];
-                z.head[bi] = z.base + i as! u32;
+                z.head[bi] = base + i as! u32;
             }
+            z.pos = p;
+            add_match(z, out, dist, len);
+            p += len;
         } else {
-            add_lit(z, out, z.win[p]);
+            // add_lit, with the position in its local.
+            let c = z.win[p];
+            z.syms[z.nsym] = c;
+            z.lfreq[c]++;
+            z.nsym++;
+            p++;
+            if z.nsym == SYM_MAX {
+                z.pos = p;
+                end_block(z, out, false);
+            }
         }
     }
+    z.pos = p;
 }
 
 // Level 1's match length that leaves a bucket's older candidate untried, as
