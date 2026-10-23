@@ -826,6 +826,36 @@ writing of sequences is 13, and counting and coding literals 11. At level 3 on
 `webster`, the package's double-fast matcher is 61 percent of the samples,
 `zstd_block` 19, and the sequences and literals 9 each.
 
+### Small JSON bodies: reset, Huffman codes, level 1's loop, and CRC-32
+
+2026-10-23, branch `json-speed` against `ecc06fe`, Goose `v2026.3` with Apple clang
+21.0.0, `goose build` defaults. The bodies are JSON responses of the shape HttpArena's
+`/json/:count` asks for: 25, 40, and 50 items (4,190, 6,707, and 8,397 bytes), and the
+first 100 bytes of a one-item one. A program built with `goose build` calls
+`compress::compress` (gzip) on a body 500 times a batch, 41 batches, and takes the
+median batch; each build ran 3 times, alternating with the other, and a cell is the
+best of the 3, in µs a call. Other work kept the load average between 23 and 35
+throughout, so the cells are noisier than earlier sections'. The output is the same
+before and after, byte for byte.
+
+| Body | Level | Bytes out | `ecc06fe` | `json-speed` | Change |
+|---|---:|---:|---:|---:|---:|
+| 100 bytes | 1 | 108 | 7.95 | 2.23 | −72% |
+| 100 bytes | 6 | 108 | 8.13 | 2.40 | −70% |
+| 25 items | 1 | 1,008 | 18.62 | 11.27 | −39% |
+| 25 items | 6 | 938 | 24.52 | 17.43 | −29% |
+| 40 items | 1 | 1,420 | 24.16 | 15.87 | −34% |
+| 40 items | 6 | 1,273 | 33.98 | 26.08 | −23% |
+| 50 items | 1 | 1,703 | 27.98 | 18.91 | −32% |
+| 50 items | 6 | 1,483 | 39.98 | 31.73 | −21% |
+
+The reset that keeps the tables, alone, by the same method: 100 bytes at level 1 went
+from 7.40 to 3.75 µs and at level 6 from 7.70 to 3.91; 50 items at level 1 from 26.44
+to 21.69 and at level 6 from 38.36 to 32.99. CRC-32 alone, a program calling
+`compress::crc32` 2,000 times on random bytes, the best of 31 rounds: 2,048 bytes took
+0.46 µs against 0.64, 8,397 bytes 1.87 against 2.69, and 65,536 bytes 13.1 against
+20.8; 1,024 and 1,500 bytes, below the two halves' threshold, didn't change.
+
 ## AMD Ryzen 7 5800X3D, Windows
 
 - AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,
