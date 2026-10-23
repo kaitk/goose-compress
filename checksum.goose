@@ -21,23 +21,82 @@ fn crc_table() -> u32[4096] {
     return t;
 }
 
+// From 2 KB, the two halves of the input run as two chains of lookups at
+// once, where one chain waits on each 16 bytes' result before the next. The
+// halves' CRCs are then joined as zlib's crc32_combine joins them: the
+// first's times x^(8 n) modulo the polynomial, for the second's n bytes.
 fn crc32(crc: u32, data: const u8[:]) -> u32 {
-    let t .= CRC_TABLE;
-    var c = ~crc;
+    let half = (data.len / 32) * 16;
+    var a = ~crc;
     var i = 0;
+    if half >= 1024 {
+        var b: u32 = 0xFFFFFFFF;
+        while i < half {
+            a = crc16(a, data[i..i + 16]);
+            b = crc16(b, data[half + i..half + i + 16]);
+            i += 16;
+        }
+        for x in data[2 * half..] { b = CRC_TABLE[(b ^ x) & 0xFF] ^ (b >> 8); }
+        return gf2_mul(x8n(data.len - half), ~a) ^ ~b;
+    }
     while i + 16 <= data.len {
-        let b = data[i..i + 16];
-        let lo = c ^ (b[0] | (b[1] as u32) << 8 | (b[2] as u32) << 16 | (b[3] as u32) << 24);
-        c = t[3840 + (lo & 0xFF) as i64] ^ t[3584 + ((lo >> 8) & 0xFF) as i64] ^
-            t[3328 + ((lo >> 16) & 0xFF) as i64] ^ t[3072 + (lo >> 24) as i64] ^
-            t[2816 + b[4] as i64] ^ t[2560 + b[5] as i64] ^ t[2304 + b[6] as i64] ^
-            t[2048 + b[7] as i64] ^ t[1792 + b[8] as i64] ^ t[1536 + b[9] as i64] ^
-            t[1280 + b[10] as i64] ^ t[1024 + b[11] as i64] ^
-            t[768 + b[12] as i64] ^ t[512 + b[13] as i64] ^ t[256 + b[14] as i64] ^ t[b[15]];
+        a = crc16(a, data[i..i + 16]);
         i += 16;
     }
-    for b in data[i..] { c = t[(c ^ b) & 0xFF] ^ (c >> 8); }
-    return ~c;
+    for x in data[i..] { a = CRC_TABLE[(a ^ x) & 0xFF] ^ (a >> 8); }
+    return ~a;
+}
+
+// The CRC register c after the 16 bytes of b, by slice-by-16.
+inline fn crc16(c: u32, b: const u8[:]) -> u32 {
+    let t .= CRC_TABLE;
+    let lo = c ^ (b[0] | (b[1] as u32) << 8 | (b[2] as u32) << 16 | (b[3] as u32) << 24);
+    return t[3840 + (lo & 0xFF) as i64] ^ t[3584 + ((lo >> 8) & 0xFF) as i64] ^
+        t[3328 + ((lo >> 16) & 0xFF) as i64] ^ t[3072 + (lo >> 24) as i64] ^
+        t[2816 + b[4] as i64] ^ t[2560 + b[5] as i64] ^ t[2304 + b[6] as i64] ^
+        t[2048 + b[7] as i64] ^ t[1792 + b[8] as i64] ^ t[1536 + b[9] as i64] ^
+        t[1280 + b[10] as i64] ^ t[1024 + b[11] as i64] ^
+        t[768 + b[12] as i64] ^ t[512 + b[13] as i64] ^ t[256 + b[14] as i64] ^ t[b[15]];
+}
+
+// a(x) b(x) modulo the CRC polynomial, both bit-reflected as CRC-32 holds
+// them, as zlib's multmodp.
+fn gf2_mul(a: u32, b0: u32) -> u32 {
+    var m: u32 = 1 << 31;
+    var p: u32 = 0;
+    var b = b0;
+    while m != 0 {
+        if a & m != 0 { p ^= b; }
+        b = if b & 1 != 0 { (b >> 1) ^ 0xEDB88320 } else { b >> 1 };
+        m >>= 1;
+    }
+    return p;
+}
+
+// x^(2^k) modulo the polynomial, for k below 32.
+let X2N = x2n_table();
+
+fn x2n_table() -> u32[32] {
+    var t: u32[32] = [0; 32];
+    var p: u32 = 1 << 30;
+    for k in 32 {
+        t[k] = p;
+        p = gf2_mul(p, p);
+    }
+    return t;
+}
+
+// x^(8 n) modulo the polynomial, by the bits of n, as zlib's x2nmodp.
+fn x8n(n0: i64) -> u32 {
+    var p: u32 = 1 << 31;
+    var n = n0;
+    var k = 3;
+    while n != 0 {
+        if n & 1 != 0 { p = gf2_mul(X2N[k & 31], p); }
+        n >>= 1;
+        k++;
+    }
+    return p;
 }
 
 // The largest n for which 255 n (n + 1) / 2 + (n + 1) (65521 - 1) fits in 32

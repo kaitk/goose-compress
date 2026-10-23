@@ -8,3 +8,21 @@ the same, split at 15: bbce3b9d
 the same, split at 16: bbce3b9d
 the same, split at 17: bbce3b9d
 the same, split at 5000: bbce3b9d
+crc32 of 2015 random bytes: 4171b52a
+the same, from the crc32 of its first 7: 4171b52a
+crc32 of 2047 random bytes: cc6543f7
+the same, from the crc32 of its first 7: cc6543f7
+crc32 of 2048 random bytes: b77e5308
+the same, from the crc32 of its first 7: b77e5308
+crc32 of 2049 random bytes: f6013278
+the same, from the crc32 of its first 7: f6013278
+crc32 of 2079 random bytes: 37c4dfff
+the same, from the crc32 of its first 7: 37c4dfff
+crc32 of 2080 random bytes: c9348e29
+the same, from the crc32 of its first 7: c9348e29
+crc32 of 4111 random bytes: 7d6fa9fe
+the same, from the crc32 of its first 7: 7d6fa9fe
+crc32 of 8397 random bytes: 20152134
+the same, from the crc32 of its first 7: 20152134
+crc32 of 70001 random bytes: ea7bee4b
+the same, from the crc32 of its first 7: ea7bee4b

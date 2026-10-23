@@ -173,7 +173,10 @@ users, is [architecture](architecture.md). Measurements are recorded in
   MB/s a byte at a time and 1.8 GB/s by slice-by-8. The libraries' carryless multiply
   is out of Goose's reach
   ([findings](goose-findings.md#goose-has-no-carryless-multiply)) (task 001 step 4,
-  2026-10-12).
+  2026-10-12). From 2 KB, the input's two halves run at once, as two chains of
+  lookups, and their CRCs are joined as zlib's `crc32_combine` joins them: on the M1
+  Pro, 8,397 bytes took 1.87 µs against 2.69 µs, and 64 KB 13.1 µs against 20.8 µs;
+  at 2 KB, 0.46 µs against 0.64 µs (2026-10-23).
 - **zstd is a fourth format for `compress`, with a stream type of its own.**
   `compress::ZSTD` lets a caller such as goose-http pick any encoding with one
   argument. Its stream is a `ZstdEncoder`, with overloads of `reset`, `write`,

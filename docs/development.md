@@ -103,7 +103,8 @@ table with the reason, and return to a release once one includes the fix.
 1. `goose check` of each root file under `test/` and `bench/`.
 2. `test/run_tests.py`: the tests under `test/<area>/` ([Run the tests](#run-the-tests)).
    `test/checksums/` checks CRC-32, Adler-32, and XXH64 against known values and
-   across splits of their input. `test/deflate/` checks the Huffman code builder
+   across splits of their input, and CRC-32 against a bit at a time at lengths on
+   each side of 2 KB, where it starts to take two halves at once. `test/deflate/` checks the Huffman code builder
    (RFC 1951's canonical-code example, optimal lengths, and Fibonacci frequencies cut
    to 15 and 7 bits), the exact bytes of small streams at level 0 and of small fixed
    and dynamic Huffman streams at level 1, what the levels match differently (level 1
