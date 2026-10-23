@@ -45,9 +45,9 @@ fn encoder(format: i64 = GZIP, level: i64 = DEFAULT_LEVEL) -> Encoder {
                      .. };
 }
 
-// Starts e over as a new stream, as encoder(format, level) would make it, in
-// place: building an Encoder copies each of its arrays several times
-// (docs/goose-findings.md), and zeroing them where they are doesn't.
+// Starts e over as a new stream, which codes as one from encoder(format, level)
+// would, in place: building an Encoder copies each of its arrays several times
+// (docs/goose-findings.md), and resetting it where it is copies none (lz_reset).
 fn reset(e: Encoder&, format: i64 = GZIP, level: i64 = DEFAULT_LEVEL) {
     assert(format == GZIP || format == ZLIB || format == RAW);
     assert(level >= 0 && level <= 9);

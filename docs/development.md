@@ -110,7 +110,11 @@ table with the reason, and return to a release once one includes the fix.
    tries a bucket's 2 newest entries and level 2 follows the chain past them; levels 5
    and up take a literal for a longer match one byte on), and matches at distance
    32,768. `test/stream/` checks flushes, `reset`, and that a stream's bytes don't
-   depend on how its input was split across writes, at levels 0, 1, 2, 6, and 9. Each
+   depend on how its input was split across writes, at levels 0, 1, 2, 6, and 9; and
+   that streams one after another through one encoder, reset between them, code as
+   new encoders' do at levels 1, 2, and 6, including a stream after enough empty
+   ones to bring the offsets round past 2^31, where the tables must have been cleared
+   for it to. Each
    exact-byte stream at level 1 and up was checked by decompressing it with Python's
    `zlib`. `test/zstd/` checks the exact bytes of empty, raw, RLE, and compressed
    blocks: two with sequences and the predefined tables, the second across a flush with

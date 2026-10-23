@@ -1,0 +1,6 @@
+level 1: streams after reset as from a new encoder, of 60: 60
+level 2: streams after reset as from a new encoder, of 60: 60
+level 6: streams after reset as from a new encoder, of 60: 60
+level 1: a stream after offsets passed 2^31 as from a new encoder: ok
+level 2: a stream after offsets passed 2^31 as from a new encoder: ok
+level 6: a stream after offsets passed 2^31 as from a new encoder: ok

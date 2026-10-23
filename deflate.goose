@@ -44,8 +44,9 @@ struct Lz {
     // Bits not yet appended to the output, the oldest in the low bits.
     bits: u64,
     nbits: i64,
-    // The stream offset of win[0], modulo 2^32.
-    base: u32,
+    // The stream offset of win[0], modulo 2^32. Offsets start at WSIZE, so an
+    // empty table entry is never in reach (lz_reset).
+    base: u32 = WSIZE,
     // win[..fill] holds input; pos is the next position to match, and the
     // current block covers win[block_start..pos].
     fill: i64,
@@ -82,28 +83,35 @@ struct Lz {
     win: u8[WIN_SIZE],
 }
 
-// Sets z as `Lz { level: level, .. }` would.
+// Starts z over as a new stream at level, which codes as it would in
+// `Lz { level: level, .. }` for its first 2^31 bytes. The tables keep their
+// entries: the new stream's offsets start a window past the last one's end, so
+// no entry from before is in reach, as a new Lz's empty ones aren't. They're
+// cleared once offsets would pass 2^31, before old ones could wrap round into
+// reach. win and syms keep their bytes, since nothing reads them past fill and
+// nsym.
 fn lz_reset(z: Lz&, level: i64) {
     z.level = level;
     z.bits = 0;
     z.nbits = 0;
-    z.base = 0;
+    z.base += (z.fill + WSIZE) as! u32;
+    if z.base > 1 << 31 {
+        for &x in z.head { x = 0; }
+        for &x in z.prev { x = 0; }
+        z.base = WSIZE;
+    }
     z.fill = 0;
     z.pos = 0;
     z.block_start = 0;
-    for &x in z.head { x = 0; }
-    for &x in z.prev { x = 0; }
     z.ahead_len = 0;
     z.ahead_dist = 0;
     z.warm = 0;
     z.next_h = 0;
     z.next_off = 0;
     z.nsym = 0;
-    for &x in z.syms { x = 0; }
     for &x in z.lfreq { x = 0; }
     for &x in z.dfreq { x = 0; }
     z.extra = 0;
-    for &x in z.win { x = 0; }
 }
 
 fn lz_write(z: Lz&, data: const u8[:], out: u8[>..]&) {

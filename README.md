@@ -86,8 +86,10 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
   ([findings](docs/goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)),
   so build each slot once and reset it for each stream.
   - `compress::reset(e, format = GZIP, level = DEFAULT_LEVEL)`: starts `e` over as a
-    new stream, as `encoder` would make it, by zeroing it in place. `compress` of 100
-    bytes, which resets, takes 7.3 µs there.
+    new stream, in place, which codes as one from `encoder` would. It clears nothing
+    large: a stream starts out of the hash tables' reach, and they're cleared after
+    2 GB of streams, counting 32 KB more for each ([decisions](docs/decisions.md)).
+    `compress` of 100 bytes, which resets, took 7.3 µs there at `v0.1.1`.
   - `compress::write(e, data, out)`: compresses `data` into the stream. It appends whole
     blocks and holds the rest, so `out` may grow by nothing.
   - `compress::flush(e, out)`: appends everything written so far, then an empty stored

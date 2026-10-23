@@ -38,8 +38,8 @@ users, is [architecture](architecture.md). Measurements are recorded in
   resizable array, so a program can keep one per connection in an indexable array of
   slots. It holds input until a block fills, so the bytes of a stream that isn't flushed
   don't depend on how its input was split across writes (task 001, 2026-10-12).
-- **An encoder is reset in place, not rebuilt.** `reset` zeroes an `Encoder` where it
-  is, because a struct literal builds one through temporaries and copies each array
+- **An encoder is reset in place, not rebuilt.** `reset` starts an `Encoder` over
+  where it is, because a struct literal builds one through temporaries and copies each array
   several times
   ([findings](goose-findings.md#a-struct-literal-copies-each-nested-fixed-array-whole)).
   `compress` resets one encoder that each program instance builds at its first call
@@ -253,6 +253,14 @@ users, is [architecture](architecture.md). Measurements are recorded in
   for a stream's first 2 GB, as far as the tables' 32-bit offsets go without wrapping
   in either. Clearing level 3's 384 KB of tables at every reset made `compress` of 100
   bytes take 6.2 µs, against 2.6 µs without (task 004 step 5, 2026-10-13).
+- **A DEFLATE `reset` keeps the hash tables and chains too,** by the zstd reset's
+  rule: offsets start at 32,768 in a new encoder, and each stream's a window past the
+  last one's end, so no entry from before is in reach; the tables are cleared when
+  offsets would pass 2^31, and a stream after a reset codes as a new encoder's for its
+  first 2 GB. The window and the block's symbols aren't zeroed either, since nothing
+  reads them past the input and the symbols held; only the symbol counts are. Zeroing
+  the 460 KB at every reset was half the time of `compress` of a 100-byte body at
+  level 1 on the M1 Pro: 7.4 µs, against 3.8 µs without (2026-10-23).
 - **zstd accepts levels 1 to 22, with two implemented matchers.** Level 1 uses the
   fast matcher; levels 2 to 22 use the double-fast matcher, level 3. The stream's
   default is 3. Higher levels need separate implementations and measurements
