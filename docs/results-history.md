@@ -1984,3 +1984,6 @@ bodies of 25 to 50 items at level 1 and 21 to 29 percent at level 6, 4 to 5 perc
 100 bytes, and 12 to 20 percent more MB/s on Silesia. gcc doesn't inline the C `load32`
 that Apple clang does. The next bucket found early costs the bodies 3 to 12 percent at
 level 1, as on the M1 Pro, and is within 3 percent at level 6.
+
+The inline `load32` is kept for gcc, where servers build, at the M1 Pro's cost
+([decisions](decisions.md#settled), 2026-10-23); the next bucket isn't.

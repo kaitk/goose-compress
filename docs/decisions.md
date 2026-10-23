@@ -39,6 +39,15 @@ users, is [architecture](architecture.md). Measurements are recorded in
   `dickens`
   ([results](results-history.md#crc-32-on-pmull)). The trade-off: a C compiler for one
   function (2026-10-23).
+- **`load32` is an `inline fn`, tuned for gcc.** Servers build with gcc, which doesn't
+  inline the C `load32` on its own. With gcc on a Ryzen 7 5800X3D, the inline form
+  takes 21 to 29 percent off the small JSON bodies at levels 1 and 6 and gives 12 to 20
+  percent more MB/s on Silesia
+  ([results](results-history.md#level-1s-load32-and-next-bucket-with-gcc)). The
+  trade-off: Apple clang already inlines the C function, and Goose's inlining gives it
+  other C that costs 3 to 15 percent at levels 6 and 9 on an M1 Pro, and up to 3 at
+  level 1 ([results](results-history.md#level-1s-load32-and-next-bucket-not-kept)).
+  Task 008 looks for a form that wins under both (2026-10-23).
 - **Encoding only.** Decoding is out of scope for now. goose-http doesn't decode request
   bodies, and accepting them needs limits against decompression bombs (2026-10-12).
 - **Bytes in, bytes out, streaming with flush.** A one-shot `compress`, and an `Encoder`

@@ -52,4 +52,4 @@ DEFLATE and zstd on the Ryzen, aiming for parity with the C libraries or a decis
 to proxy to them. Task 002, brotli, waits
 on a measurement that shows it's needed. See the [latest results](../docs/results.md)
 for the measured gaps. Task 006 moves the build to Goose releases; its Windows and Linux
-test runs remain.
+test runs remain. Task 008 looks for a `load32` that is fast under both clang and gcc.
