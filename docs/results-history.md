@@ -2058,3 +2058,15 @@ libdeflate, for seven bodies a cycle where Plod compresses five (goose-http's
 `min_size` was 1,024 bytes). With the shim, gzip is about 45 percent of Plod's CPU;
 Plod's kernel time is 8.1 µs a request against Aegon's 6.1, and its other user code
 5.7 µs against 3.2.
+
+That script's seven requests are HttpArena's earlier json-comp. HttpArena's harness at
+`3717e25` sends three, `/json/25?m=4`, `/json/40?m=8`, and `/json/50?m=6`
+(`scripts/lib/tools/gcannon.sh`), all compressed by both servers. On those three, the
+bodies' times above give libdeflate a lead of about 1.6 µs a request over the shim.
+In HttpArena's own run (`bench/httparena.sh run`, `PROFILES=json-comp`, `RUNS=1`,
+`SERVER_CPUS=0-3`, `LOAD_CPUS=4-15`, `THREADS=8`, HttpArena's network sysctls in Docker
+Desktop's VM), Plod `v0.5.4` with this release served 107,764 requests a second at
+4,096 connections at 272.9 percent CPU, 25.3 µs a request, and 106,621 at 16,384, at
+1,477 bytes a response. Aegon's run earlier the same night served 118,747 and 112,832,
+at 21.9 and 23.2 µs, 1,465 bytes. Plod at `ef8b625`, on `v0.1.3`, served 105K and
+103K; single runs at one commit varied from 98K to 106K that night.

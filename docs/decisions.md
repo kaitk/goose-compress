@@ -20,10 +20,11 @@ users, is [architecture](architecture.md). Measurements are recorded in
   against proxies. libdeflate gzips the HttpArena bodies 7 to 13 percent faster than
   the package with its C matcher, but it has no streaming or sync flush, so a proxy
   would leave `Encoder` on another encoder whose bytes differ from `compress`'s, and
-  would bring libdeflate's C to every platform the package builds on. In Plod's
-  json-comp entry, gzip is now about 45 percent of the server's CPU, and most of the
-  gap to Aegon is outside it ([results](results-history.md#level-1-and-the-symbol-coder-in-c)).
-  A proxy comes back if gzip again decides that benchmark.
+  would bring libdeflate's C to every platform the package builds on. On HttpArena's
+  json-comp bodies, libdeflate's lead is about 1.6 µs a request, about half of Plod's
+  gap to Aegon in CPU a request
+  ([results](results-history.md#level-1-and-the-symbol-coder-in-c)). A proxy comes back
+  if the encoder can't close that lead in the package.
 - **`bench/` holds each comparison library's own language: C, and Go for
   klauspost/compress.** klauspost is task 004's model of a zstd encoder written outside
   C, without assembly, so it shows what a language like Goose can reach; a C port or
