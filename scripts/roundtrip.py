@@ -157,6 +157,11 @@ def inputs():
     yield "one byte", b"a", None, None
     yield "text", text(100_000), (0.24, 0.19), (0.225, 0.205)
     yield "json", json_doc(), (0.235, 0.205), (0.19, 0.198)
+    # The small bodies bench/json.goose times; test/deflate/json_bodies.goose
+    # holds their sizes.
+    for name in ("small100", "json25", "json40", "json50"):
+        with open(os.path.join(ROOT, "bench", "json", name + ".json"), "rb") as f:
+            yield name, f.read(), None, None
     # Stored where a code would grow it.
     yield "random", r.randbytes(300_000), 1.001, 1.001
     for n in (STORED_MAX - 1, STORED_MAX, STORED_MAX + 1, 2 * STORED_MAX,
