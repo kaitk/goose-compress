@@ -856,6 +856,62 @@ to 21.69 and at level 6 from 38.36 to 32.99. CRC-32 alone, a program calling
 0.46 µs against 0.64, 8,397 bytes 1.87 against 2.69, and 65,536 bytes 13.1 against
 20.8; 1,024 and 1,500 bytes, below the two halves' threshold, didn't change.
 
+### Small JSON bodies: the hash table sized to the input
+
+2026-10-23, branch `input-sized` against `e762653` (`v0.1.2`), Goose `v2026.3` with
+Apple clang 21.0.0, `goose build` defaults, on the bodies of the section above. One-shot
+`compress` takes 2^k hash table entries, one or more an input byte, from 2^12 to 2^16
+([decisions](decisions.md)). The load average was 30 to 49 throughout, so the times
+are noisy.
+
+| Body | Level | Bytes out `v0.1.2` | `input-sized` | libdeflate | Warm `v0.1.2` | `input-sized` | Cold `v0.1.2` | `input-sized` | Instructions `v0.1.2` | `input-sized` |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 bytes | 1 | 108 | 108 | 108 | 2.15 | 2.17 | 8 | 7 | 29,731 | 29,899 |
+| 100 bytes | 6 | 108 | 108 | 107 | 2.32 | 2.32 | 9 | 8 | 34,719 | 34,588 |
+| 25 items | 1 | 1,008 | 1,011 | 1,012 | 11.16 | 11.11 | 31 | 19 | 199,887 | 202,312 |
+| 25 items | 6 | 938 | 938 | 937 | 17.10 | 17.34 | 42 | 25 | 350,588 | 353,830 |
+| 40 items | 1 | 1,420 | 1,422 | 1,421 | 15.59 | 15.42 | 37 | 23 | 288,041 | 291,168 |
+| 40 items | 6 | 1,273 | 1,273 | 1,270 | 25.75 | 26.51 | 53 | 34 | 526,082 | 532,310 |
+| 50 items | 1 | 1,703 | 1,701 | 1,708 | 18.55 | 18.35 | 42 | 30 | 347,770 | 349,758 |
+| 50 items | 6 | 1,483 | 1,483 | 1,478 | 31.93 | 32.47 | 61 | 44 | 648,025 | 651,251 |
+
+- Bytes out are gzip's; libdeflate v1.26's at the same level, from a reused
+  compressor. At levels 2 to 9 the bodies' output moved by at most 3 bytes, 0.2
+  percent.
+- Warm: µs a call, by the method of the section above: 41 batches of 500 calls, the
+  median batch, the best of 3 alternating runs.
+- Cold: µs a call, each call timed alone after writing a byte in each 64-byte line of
+  64 MB, which empties the caches; the median of 400 calls, the best of 3 alternating
+  runs. `clock_ns` moved in whole µs.
+- Instructions a call: `/usr/bin/time -l`'s instructions retired for 20,000 calls,
+  less a run of none, divided by 20,000. With the hash's size as a variable but the
+  full table, levels 1 and 6 ran 0.04 to 0.4 percent more instructions than `v0.1.2`;
+  the rest is the smaller table's.
+
+The hash table's bytes a call touches, counted from the hashes of every position but
+the last 3, which is every position the matchers hash, in 64-byte lines: 100 bytes
+6,016 before and 4,800 after; 25 items 50,752 and 27,776; 40 items 58,496 and 28,864;
+50 items 62,464 and 43,904. A call also touches its input's length of the window, 4
+bytes a symbol of the block, the 1,264 bytes of symbol counts, and from level 2 2 bytes
+of chains an input byte, the same before and after.
+
+On slices of the 12 Silesia files, 2 of each size from each file, at offsets 100,000
+and 2,000,000, the total gzip bytes against `v0.1.2`, with 2^k entries at least half,
+one, or two an input byte:
+
+| Size | Level | `v0.1.2` | ½ a byte | 1 a byte | 2 a byte | libdeflate |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1,500 | 1 | 20,188 | +0.23% | +0.23% | +0.23% | 20,193 |
+| 3,000 | 1 | 37,993 | +0.42% | +0.42% | +0.17% | 37,998 |
+| 6,000 | 1 | 71,170 | +0.79% | +0.31% | +0.13% | 71,162 |
+| 12,000 | 1 | 133,766 | +0.57% | +0.24% | +0.07% | 133,757 |
+| 24,000 | 1 | 262,430 | +0.46% | +0.14% | 0 | 262,267 |
+| 48,000 | 1 | 512,015 | +0.27% | 0 | 0 | 512,033 |
+| 6,000 | 2 | 70,810 | +0.04% | +0.02% | +0.01% | 69,629 |
+| 24,000 | 2 | 259,578 | +0.05% | +0.02% | 0 | 255,133 |
+| 6,000 | 6 | 69,417 | +0.01% | +0.00% | 0 | 68,125 |
+| 24,000 | 6 | 251,907 | +0.00% | +0.00% | 0 | 246,846 |
+
 ## AMD Ryzen 7 5800X3D, Windows
 
 - AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,

@@ -1,7 +1,10 @@
 // Streams one after another through one encoder, reset in place between them,
 // each give what a new encoder gives: at levels 1, 2, and 6, of sizes and
 // flushes that vary, and across the clear of the hash tables once stream
-// offsets would pass 2^31.
+// offsets would pass 2^31. One-shot compress, which sizes the hash table from
+// its input, gives at every level what a new encoder sized alike gives, with
+// small and large inputs in turn, and so does a stream after it in the same
+// encoder.
 import std;
 import compress from "../../";
 import check from "../";
@@ -24,6 +27,16 @@ fn fresh(data: const u8[:], level: i64, every: i64) -> u8[>..] {
     var e = compress::encoder(compress::RAW, level);
     var out: u8[>..] = [];
     stream(e, data, every, out);
+    return out;
+}
+
+// What a new encoder gives with its hash table sized for data, as compress
+// sizes it.
+fn fresh_fit(data: const u8[:], level: i64) -> u8[>..] {
+    var e = compress::encoder(compress::RAW, level);
+    compress::lz_fit(e.z, data.len);
+    var out: u8[>..] = [];
+    stream(e, data, 0, out);
     return out;
 }
 
@@ -67,6 +80,41 @@ fn main() {
         }
         check::eq(str("level ", level, ": streams after reset as from a new encoder, of 60"),
                   same, 60);
+    }
+    // 2^bits entries, at least one a byte, from 2^12 to 2^16.
+    var fit = compress::encoder(compress::RAW, 1);
+    for n, i in [0, 4096, 4097, 8192, 8193, 16384, 16385, 32768, 32769, 1 << 20] {
+        compress::lz_fit(fit.z, n);
+        check::eq(str("the hash table's bits for ", n, " bytes"), 32 - fit.z.shift,
+                  [12, 12, 13, 13, 14, 14, 15, 15, 16, 16][i]);
+    }
+    // Sizes on each side of each of those steps, each after a larger or a
+    // smaller one: through compress; through one encoder sized as compress
+    // sizes it; and through the same encoder as a stream, which isn't sized.
+    let sizes = [100000, 100, 32769, 4095, 32768, 4096, 16385, 4097, 16384, 8192, 8193,
+                 65536, 1000];
+    for level in 1..10 {
+        var e = compress::encoder(compress::RAW, level);
+        var same = 0;
+        for n in sizes {
+            let at = r.rand_int(data.len - n);
+            let input = data[at..at + n];
+            let want = fresh_fit(input, level);
+            var one: u8[>..] = [];
+            compress::compress(input, one, compress::RAW, level);
+            if one == want { same++; }
+            compress::reset(e, compress::RAW, level);
+            compress::lz_fit(e.z, n);
+            var sized: u8[>..] = [];
+            stream(e, input, 0, sized);
+            if sized == want { same++; }
+            compress::reset(e, compress::RAW, level);
+            var streamed: u8[>..] = [];
+            stream(e, input, 0, streamed);
+            if streamed == fresh(input, level, 0) { same++; }
+        }
+        check::eq(str("level ", level, ": one-shot, sized, and streamed, as from a new",
+                      " encoder, of ", 3 * sizes.len), same, 3 * sizes.len);
     }
     // Zeros with random bytes at 900 to 1,100, flushed every 1,000, which
     // leaves the 3 positions before each flush unhashed; the 20 bytes from

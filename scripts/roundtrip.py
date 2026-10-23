@@ -10,8 +10,10 @@ flush, the output so far must decompress to exactly the input written so far.
 Inputs that repeat must come out smaller than a limit, one-shot at level 1 and
 up, and in zstd. An input whose optimal Huffman code needs more than 15 bits must get a
 dynamic code of exactly 15. An input whose statistics change must take each of
-zstd's sequence table modes, built and repeated ones among them. Then a fuzz run
-of random inputs, levels, and plans, seeded for repeatability.
+zstd's sequence table modes, built and repeated ones among them. Text and JSON
+on each side of each input size where one-shot compress sizes its hash table up
+a step go one-shot through every DEFLATE level. Then a fuzz run of random
+inputs, levels, and plans, seeded for repeatability.
 
     scripts/roundtrip.py [ENCODE] [--levels 0,1,2,6,9] [--zstd-levels 1,3]
                          [--fuzz N] [--seed S]
@@ -39,6 +41,9 @@ ZSTD_WINDOW = 1 << 17
 # DEFLATE and in zstd.
 STRONG_LEVEL = 6
 ZSTD_STRONG_LEVEL = 3
+# The input sizes past which one-shot compress takes a larger hash table
+# (lz_fit in deflate.goose).
+TABLE_STEPS = (4096, 8192, 16384, 32768)
 
 
 def text(n):
@@ -462,6 +467,16 @@ def main():
             except Failure as e:
                 sys.exit(f"FAIL the sequence tables' modes, zstd level {level}: {e}")
             cases += 1
+        doc, words = json_doc(), text(2 * WSIZE)
+        for step in TABLE_STEPS:
+            for n in (step, step + 1):
+                for name, data in (("json", doc[:n]), ("text", words[:n])):
+                    for level in range(10):
+                        try:
+                            check(args.encode, "gzip", level, data, None, tmp)
+                        except Failure as e:
+                            sys.exit(f"FAIL {name}, {n} bytes, level {level}: {e}")
+                        cases += 1
         r = random.Random(args.seed)
         for i in range(args.fuzz):
             n = r.choice((0, 1, r.randrange(1000), r.randrange(300_000)))

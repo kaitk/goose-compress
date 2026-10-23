@@ -81,6 +81,7 @@ fn compress(data: const u8[:], out: u8[>..]&, format: i64 = GZIP,
     }
     if ONE_SHOT.len == 0 { ONE_SHOT.push(encoder()); }
     reset(ONE_SHOT[0], format, level);
+    lz_fit(ONE_SHOT[0].z, data.len);
     write(ONE_SHOT[0], data, out);
     finish(ONE_SHOT[0], out);
 }

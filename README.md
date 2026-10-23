@@ -76,9 +76,10 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
 - **`compress::compress(data, out, format = GZIP, level = DEFAULT_LEVEL)`**: compresses
   `data` whole into one stream. It reuses one encoder for each program instance (each
   thread program has its own), built at the first call, so the program holds its
-  460,406 bytes from then on.
+  460,414 bytes from then on. A call of up to 32 KB uses part of the hash table, at
+  least an entry a byte, so a small body touches little of it.
 - **`compress::encoder(format = GZIP, level = DEFAULT_LEVEL)`**: a stream,
-  `compress::Encoder`. It's a fixed-size value of 460,406 bytes, so it fits in an
+  `compress::Encoder`. It's a fixed-size value of 460,414 bytes, so it fits in an
   array of per-connection slots: a 64 KB window, a 256 KB hash table, 64 KB of hash
   chains, and a 64 KB block of symbols ([architecture](docs/architecture.md#formats-and-the-api)).
   Building one copies its arrays several times at the pinned compiler, about 145 µs on
@@ -98,7 +99,7 @@ All in namespace `compress`. Output is appended to a `u8[>..]` the caller owns.
   - `compress::finish(e, out)`: appends the rest and the trailer. The stream is done.
   - The bytes of a stream depend on its input and where it was flushed, not on how
     the input was split across `write` calls. A stream that isn't flushed gives the
-    same bytes as `compress`.
+    same bytes as `compress` for an input over 32 KB.
   - Matches reach back 32,768 bytes, across writes and flushes.
 - **`compress::zstd_encoder(level = 3)`**: a zstd stream, `compress::ZstdEncoder`,
   with zstd's levels 1 to 22. Level 1 runs libzstd's fast matcher, and 2 and up its

@@ -1,6 +1,25 @@
 level 1: streams after reset as from a new encoder, of 60: 60
 level 2: streams after reset as from a new encoder, of 60: 60
 level 6: streams after reset as from a new encoder, of 60: 60
+the hash table's bits for 0 bytes: 12
+the hash table's bits for 4096 bytes: 12
+the hash table's bits for 4097 bytes: 13
+the hash table's bits for 8192 bytes: 13
+the hash table's bits for 8193 bytes: 14
+the hash table's bits for 16384 bytes: 14
+the hash table's bits for 16385 bytes: 15
+the hash table's bits for 32768 bytes: 15
+the hash table's bits for 32769 bytes: 16
+the hash table's bits for 1048576 bytes: 16
+level 1: one-shot, sized, and streamed, as from a new encoder, of 39: 39
+level 2: one-shot, sized, and streamed, as from a new encoder, of 39: 39
+level 3: one-shot, sized, and streamed, as from a new encoder, of 39: 39
+level 4: one-shot, sized, and streamed, as from a new encoder, of 39: 39
+level 5: one-shot, sized, and streamed, as from a new encoder, of 39: 39
+level 6: one-shot, sized, and streamed, as from a new encoder, of 39: 39
+level 7: one-shot, sized, and streamed, as from a new encoder, of 39: 39
+level 8: one-shot, sized, and streamed, as from a new encoder, of 39: 39
+level 9: one-shot, sized, and streamed, as from a new encoder, of 39: 39
 level 1: a stream after offsets passed 2^31 as from a new encoder: ok
 level 2: a stream after offsets passed 2^31 as from a new encoder: ok
 level 6: a stream after offsets passed 2^31 as from a new encoder: ok

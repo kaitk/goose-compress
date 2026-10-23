@@ -56,6 +56,9 @@ struct Lz {
     // entry only suggests where a match may start: it may be stale, or from
     // 2^32 bytes back, so every candidate is compared byte by byte.
     head: u32[HASH_SIZE],
+    // 32 less the hash's bits: the stream uses head[..1 << (32 - shift)]
+    // (lz_fit).
+    shift: i64 = 32 - HASH_BITS,
     // From level 2, the hash chains: for each stream offset modulo WSIZE, the
     // low 16 bits of the one before it in its bucket, or of the offset WSIZE
     // back for none in reach. A search reads links only from offsets up to
@@ -100,6 +103,7 @@ fn lz_reset(z: Lz&, level: i64) {
         for &x in z.prev { x = 0; }
         z.base = WSIZE;
     }
+    z.shift = 32 - HASH_BITS;
     z.fill = 0;
     z.pos = 0;
     z.block_start = 0;
@@ -113,6 +117,19 @@ fn lz_reset(z: Lz&, level: i64) {
     for &x in z.dfreq { x = 0; }
     z.extra = 0;
 }
+
+// Sizes the hash table for a stream of n bytes in all, which compress knows
+// before its first write: the least power of two from 2^MIN_HASH_BITS to
+// HASH_SIZE that gives an entry a byte, so a small input touches a small part
+// of head. The part used is a prefix of head, whose entries from earlier
+// streams are out of reach as lz_reset says.
+fn lz_fit(z: Lz&, n: i64) {
+    var bits = MIN_HASH_BITS;
+    while bits < HASH_BITS && 1 << bits < n { bits++; }
+    z.shift = 32 - bits;
+}
+
+let MIN_HASH_BITS = 12;
 
 fn lz_write(z: Lz&, data: const u8[:], out: u8[>..]&) {
     var at = 0;
@@ -162,13 +179,14 @@ fn match_fast(z: Lz&, out: u8[>..]&, end: i64) {
     // registers; z.pos is stored before anything that may end the block.
     let fill = z.fill;
     let base = z.base;
+    let shift = z.shift;
     var p = z.pos;
     while p < end {
         var len = 0;
         var dist = 0;
         if p + 4 <= fill {
             let v = load32(z.win, p);
-            let b = bucket(v);
+            let b = bucket(v, shift);
             let here = base + p as! u32;
             let c0 = z.head[b];
             let c1 = z.head[b + 1];
@@ -197,7 +215,7 @@ fn match_fast(z: Lz&, out: u8[>..]&, end: i64) {
         }
         if len >= MIN_MATCH {
             for i in p + 1..min(p + len, fill - 3) {
-                let bi = bucket(load32(z.win, i));
+                let bi = bucket(load32(z.win, i), shift);
                 z.head[bi + 1] = z.head[bi];
                 z.head[bi] = base + i as! u32;
             }
@@ -224,9 +242,10 @@ fn match_fast(z: Lz&, out: u8[>..]&, end: i64) {
 // libdeflate's.
 let FAST_NICE = 32;
 
-// The first of the 2 entries of a level 1 bucket in head.
-fn bucket(v: u32) -> i64 {
-    return ((v * 0x9E3779B1) >> (32 - HASH_BITS + 1)) * 2;
+// The first of the 2 entries of a level 1 bucket in head: hash4's hash with
+// its lowest bit cleared.
+fn bucket(v: u32, shift: i64) -> i64 {
+    return ((v * 0x9E3779B1) >> shift) & (HASH_SIZE - 2);
 }
 
 // Levels 2 to 9: searches along the hash chains, and at a lazy level takes a
@@ -237,13 +256,14 @@ fn match_chains(z: Lz&, out: u8[>..]&, end: i64) {
     let depth = DEPTH[z.level];
     let nice = NICE[z.level];
     let lazy = LAZY[z.level];
+    let shift = z.shift;
     while z.pos < end {
         let p = z.pos;
         var len = z.ahead_len;
         var dist = z.ahead_dist;
         z.ahead_len = 0;
         if len == 0 {
-            let len0, dist0 = search(z, p, MIN_MATCH, depth, nice);
+            let len0, dist0 = search(z, p, MIN_MATCH, depth, nice, shift);
             len = len0;
             dist = dist0;
         }
@@ -254,7 +274,7 @@ fn match_chains(z: Lz&, out: u8[>..]&, end: i64) {
         // The positions after p already inserted.
         var done = 0;
         if lazy > 0 && len < nice {
-            let len1, dist1 = search(z, p + 1, len, depth >> 1, nice);
+            let len1, dist1 = search(z, p + 1, len, depth >> 1, nice, shift);
             done = 1;
             if better(len1, dist1, len, dist, 2) {
                 z.ahead_len = len1;
@@ -263,7 +283,7 @@ fn match_chains(z: Lz&, out: u8[>..]&, end: i64) {
                 continue;
             }
             if lazy > 1 {
-                let len2, dist2 = search(z, p + 2, len, depth >> 2, nice);
+                let len2, dist2 = search(z, p + 2, len, depth >> 2, nice, shift);
                 done = 2;
                 if better(len2, dist2, len, dist, 6) {
                     z.ahead_len = len2;
@@ -275,7 +295,7 @@ fn match_chains(z: Lz&, out: u8[>..]&, end: i64) {
             }
         }
         add_match(z, out, dist, len);
-        for i in p + 1 + done..min(p + len, z.fill - 3) { insert(z, i); }
+        for i in p + 1 + done..min(p + len, z.fill - 3) { insert(z, i, shift); }
     }
 }
 
@@ -301,9 +321,9 @@ fn log2_tab() -> i64[256] {
 }
 
 // Inserts position i into its hash chain.
-fn insert(z: Lz&, i: i64) {
+fn insert(z: Lz&, i: i64, shift: i64) {
     let here = z.base + i as! u32;
-    let h = hash4(load32(z.win, i));
+    let h = hash4(load32(z.win, i), shift);
     link(z, here, z.head[h]);
     z.head[h] = here;
 }
@@ -319,14 +339,14 @@ fn link(z: Lz&, here: u32, old: u32) {
 // distance, or a length of 0. It compares at most `depth` candidates, newest
 // first, and stops at a match of `nice`. As libdeflate's hc_matchfinder, it
 // is inlined at each call.
-inline fn search(z: Lz&, p: i64, floor: i64, depth: i64, nice: i64) -> i64, i64 {
+inline fn search(z: Lz&, p: i64, floor: i64, depth: i64, nice: i64, shift: i64) -> i64, i64 {
     guard p + 4 <= z.fill else { return 0, 0; }
     let here = z.base + p as! u32;
-    let h = if here == z.next_off { z.next_h } else { hash4(load32(z.win, p)) };
+    let h = if here == z.next_off { z.next_h } else { hash4(load32(z.win, p), shift) };
     let old = z.head[h];
     z.head[h] = here;
     if p + 5 <= z.fill {
-        let h1 = hash4(load32(z.win, p + 1));
+        let h1 = hash4(load32(z.win, p + 1), shift);
         z.warm = z.head[h1];
         z.next_h = h1;
         z.next_off = here + 1;
@@ -425,8 +445,11 @@ fn slide(z: Lz&, out: u8[>..]&) {
     z.base += WSIZE;
 }
 
-fn hash4(v: u32) -> i64 {
-    return (v * 0x9E3779B1) >> (32 - HASH_BITS);
+// The top 32 - shift bits of the product. The mask changes no hash, since
+// shift is at least 32 - HASH_BITS, but lets the compiler drop head's bounds
+// checks.
+fn hash4(v: u32, shift: i64) -> i64 {
+    return ((v * 0x9E3779B1) >> shift) & (HASH_SIZE - 1);
 }
 
 fn load32(s: const u8[:], i: i64) -> u32 {

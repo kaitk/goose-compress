@@ -115,7 +115,10 @@ table with the reason, and return to a release once one includes the fix.
    that streams one after another through one encoder, reset between them, code as
    new encoders' do at levels 1, 2, and 6, including a stream after enough empty
    ones to bring the offsets round past 2^31, where the tables must have been cleared
-   for it to. Each
+   for it to; and that one-shot `compress`, at every level and at sizes on each side
+   of each step of its hash table, small after large and large after small, codes as
+   a new encoder sized alike does, as does a stream through the same encoder after
+   it. Each
    exact-byte stream at level 1 and up was checked by decompressing it with Python's
    `zlib`. `test/zstd/` checks the exact bytes of empty, raw, RLE, and compressed
    blocks: two with sequences and the predefined tables, the second across a flush with
@@ -154,7 +157,9 @@ table with the reason, and return to a release once one includes the fix.
    15 bits and be complete. It reads back the changing input's zstd frames too, block
    by block: one-shot, some must build sequence tables; flushed every 1,000 bytes,
    some must repeat the last block's; and the two must take all four table modes
-   between them. A fuzz run of 200 random inputs, levels, and plans follows,
+   between them. JSON and text of 4,096, 8,192, 16,384, and 32,768 bytes and one byte
+   more, where one-shot `compress` steps its hash table up, go one-shot through gzip at
+   every level, 0 to 9. A fuzz run of 200 random inputs, levels, and plans follows,
    with seed 0; `--levels`, `--zstd-levels`, `--fuzz N`, and `--seed S` change them.
 
 ```sh

@@ -46,14 +46,14 @@ users, is [architecture](architecture.md). Measurements are recorded in
   and keeps, held in a resizable global: a global `Encoder`, whose address clang
   knows, made level 6 2 to 7 percent slower on the Ryzen
   ([measurement](results-history.md#small-inputs-2), task 003, 2026-10-12).
-- **A stream holds 460,406 bytes**, whatever its level: a window of 65,800 bytes, a
+- **A stream holds 460,414 bytes**, whatever its level: a window of 65,800 bytes, a
   hash table of 262,144, hash chains of 65,536, a block of symbols of 65,536, and
   the block's symbol counts, 1,264, plus scalar state.
   Level 0 keeps its pending input in the window, and level 1 leaves the chains unused.
   zlib's defaults take 256 KB and a few more, by its own formula. The chains added 65,566 bytes to step 2's
   262,484 (task 001 step 4, 2026-10-12), the larger hash table 131,072 more, and
   counting symbols as they're added 1,272 more, and carrying the next position's
-  hash 12 more (task 003, 2026-10-12).
+  hash 12 more (task 003, 2026-10-12), and the hash table's size 8 more (2026-10-23).
 - **The window is 32 KB of history, 32 KB of input, and 264 bytes of lookahead.** Input
   is copied in, and when the window fills it slides down 32 KB. Matching stops 264
   bytes short of its end, so it always stops past 64 KB and a slide keeps the full
@@ -63,7 +63,7 @@ users, is [architecture](architecture.md). Measurements are recorded in
   or finish matches to the end of the input (task 001 steps 2 and 4, 2026-10-12).
 - **The hash table holds stream offsets, not window positions.** From level 2 it uses
   2^16 `u32` entries, as libdeflate's chains use, of each bucket's latest offset modulo 2^32,
-  hashed from 4 bytes. Every candidate is compared, so an entry that is stale or from
+  hashed from 4 bytes; `compress` uses fewer for an input up to 32 KB (below). Every candidate is compared, so an entry that is stale or from
   4 GB back costs a probe and never gives a wrong match, and a slide rewrites nothing.
   zlib's table of `u16` window positions takes half the memory but is rewritten at
   each slide, and `u16` offsets in the same memory let stale entries through
@@ -152,7 +152,8 @@ users, is [architecture](architecture.md). Measurements are recorded in
   for a 3-byte hash and a different lazy rule. Shallower searches at level 6 (depth
   16, nice 32) were 22 to 30 percent faster on four Silesia files and no faster on
   `x-ray`, for up to 4.7 percent more output, on `xml` (`docs/results-history.md`). `compress` runs the streaming encoder, so a stream that isn't
-  flushed gives the same bytes either way (task 001 step 4, 2026-10-12).
+  flushed gives the same bytes either way (task 001 step 4, 2026-10-12), for inputs
+  over 32 KB since `compress` sizes its hash table to smaller ones (2026-10-23).
 
   | Level | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
   |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -267,6 +268,33 @@ users, is [architecture](architecture.md). Measurements are recorded in
   the 460 KB at every reset was half the time of `compress` of a 100-byte body at
   level 1 on the M1 Pro: 7.4 µs, against 3.8 µs without
   ([results](results-history.md#small-json-bodies-reset-huffman-codes-level-1s-loop-and-crc-32),
+  2026-10-23).
+- **One-shot `compress` sizes the DEFLATE hash table to its input:** 2^k entries, for
+  the least k from 12 to 16 that gives at least one entry a byte. A 4 KB input takes
+  16 KB of the table, an 8 KB one 32 KB, and anything over 32 KB all 256 KB. A stream,
+  whose length isn't known, keeps 2^16. The hash is the product's top k bits, so the
+  table a call uses is a prefix of the same memory, and the reset's rule holds: no
+  entry left by an earlier stream, of any size, is in reach. The window, the chains,
+  and the block's symbols need no limit, since a call touches them only as far as its
+  input goes, and the floor costs a small input nothing, since it touches at most a
+  cache line a position. HttpArena compresses JSON bodies of 4 to 8 KB once a request
+  at level 1, on Zen CPUs whose 512 KB L2 two SMT threads share. JSON repeats, so
+  those bodies touched only 51 to 62 KB of the 256 KB table; sized, they touch 28 to
+  44 KB. Against `v0.1.2` on the M1 Pro, with the caches emptied before each call, a
+  call took 28 to 40 percent less time; with them warm, level 1 was within 1 percent
+  and level 6 up to 3 percent slower, as colliding buckets give its chains more
+  candidates. The output changes for inputs up to 32 KB. On the three bodies, level 1's
+  changed by −0.1 to +0.3 percent, which leaves it from 1 byte larger than libdeflate's
+  level 1 (2^15 two-entry buckets of 16-bit positions, 128 KB) to 7 smaller, and the
+  other levels' by at most 0.2 percent. On slices of 1.5 to 24 KB of the 12 Silesia
+  files, 24 of each size, level 1's grew by up to 0.42 percent, and levels 2 and 6's
+  by 0.02. Two entries a byte, libzstd's bound for an input of known size (`hashLog`
+  at most `windowLog` + 1), made level 1's output at most 0.25 percent smaller than
+  one entry a byte, for twice the table; half an entry a byte made it up to 0.79
+  percent larger than `v0.1.2`'s. The trade-off: up to 32 KB, `compress` no longer
+  gives the same bytes as a stream that isn't flushed. A size hint for streams would
+  be new API for a caller nobody has yet
+  ([results](results-history.md#small-json-bodies-the-hash-table-sized-to-the-input),
   2026-10-23).
 - **zstd accepts levels 1 to 22, with two implemented matchers.** Level 1 uses the
   fast matcher; levels 2 to 22 use the double-fast matcher, level 3. The stream's

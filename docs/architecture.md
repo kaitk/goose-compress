@@ -40,12 +40,13 @@ depend on its level:
 
 | Encoder | Bytes | What it holds |
 |---|---:|---|
-| `Encoder` (gzip, zlib, DEFLATE) | 460,406 | a 64 KB window, a 256 KB hash table, 64 KB of hash chains, a block of symbols |
+| `Encoder` (gzip, zlib, DEFLATE) | 460,414 | a 64 KB window, a 256 KB hash table, 64 KB of hash chains, a block of symbols |
 | `ZstdEncoder` | 1,010,955 | a 128 KB window and a block, hash tables, a block's sequences and literals, FSE tables |
 
 A stream's bytes don't depend on how its input was split across writes: an encoder that
-isn't flushed gives the same output for one write or many, and `compress` gives the
-same bytes as a stream that isn't flushed.
+isn't flushed gives the same output for one write or many. `compress` gives the same
+bytes as a stream that isn't flushed for an input over 32 KB; a smaller one gets a
+smaller hash table, below, and may match differently.
 
 ## DEFLATE
 
@@ -59,6 +60,10 @@ The encoder follows libdeflate's design:
   The hash table holds stream offsets rather than window positions, so a slide rewrites
   nothing, and every candidate is compared, so a stale entry costs a probe, never a
   wrong match.
+- **The hash table** has 2^16 entries in a stream. `compress`, which knows its input's
+  length, uses the first 2^k of them, at least one an input byte and at least 2^12,
+  so that a small body touches a small part of the table: 16 KB for 4 KB of input, 32
+  KB for 8 KB. Its output then differs from a stream's by a fraction of a percent.
 - **Blocks.** A block is held as symbols until 16,384 of them, a slide, a flush, or the
   end, then coded whole in the shortest of three forms, counted exactly: a Huffman code
   built from its symbol counts, the fixed code, or stored. Incompressible input grows
