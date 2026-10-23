@@ -30,7 +30,7 @@ struct Huff {
 // frequent symbol.
 fn huff_build(freq: const u32[:], h: Huff&, limit: i64) {
     huff_lengths(freq, h, limit);
-    huff_codes(h);
+    huff_codes(h, freq.len);
 }
 
 // Sets h.len as huff_build does, and leaves h.code alone.
@@ -130,17 +130,29 @@ fn huff_lengths(freq: const u32[:], h: Huff&, limit: i64) {
 
 // Sets each symbol's code from the lengths: the canonical code, in which codes
 // of one length are consecutive in symbol order and shorter codes come first.
-fn huff_codes(h: Huff&) {
-    var count: u32[16] = [0; 16];
-    for n in h.len { count[n]++; }
-    count[0] = 0;
+// Symbols from nsym on have no code.
+fn huff_codes(h: Huff&, nsym: i64 = HUFF_MAX) {
+    let lens = h.len[..nsym];
+    // Two counts, taking turns, so a run of one length doesn't make each
+    // increment wait for the one before.
+    var c0: u32[16] = [0; 16];
+    var c1: u32[16] = [0; 16];
+    var i = 0;
+    while i + 2 <= lens.len {
+        c0[lens[i] & 15]++;
+        c1[lens[i + 1] & 15]++;
+        i += 2;
+    }
+    if i < lens.len { c0[lens[i] & 15]++; }
+    c0[0] = 0;
+    c1[0] = 0;
     var next: u32[16] = [0; 16];
     var code: u32 = 0;
     for b in 1..16 {
-        code = (code + count[b - 1]) << 1;
+        code = (code + c0[b - 1] + c1[b - 1]) << 1;
         next[b] = code;
     }
-    for n, s in h.len {
+    for n, s in lens {
         if n > 0 {
             h.code[s] = reverse_bits(next[n], n) as! u16;
             next[n]++;
@@ -148,8 +160,21 @@ fn huff_codes(h: Huff&) {
     }
 }
 
+// The low n bits of code, reversed, for n up to 16.
 fn reverse_bits(code: u32, n: i64) -> u32 {
-    var r: u32 = 0;
-    for i in n { r |= ((code >> i) & 1) << (n - 1 - i); }
-    return r;
+    let r = (REV8[code & 255] as u32) << 8 | REV8[(code >> 8) & 255];
+    return r >> (16 - n);
+}
+
+// Each byte with its bits reversed.
+let REV8 = rev8_tab();
+
+fn rev8_tab() -> u8[256] {
+    var t: u8[256] = [0; 256];
+    for i in 256 {
+        var r = 0;
+        for k in 8 { r |= ((i >> k) & 1) << (7 - k); }
+        t[i] = r as! u8;
+    }
+    return t;
 }
