@@ -1987,3 +1987,74 @@ level 1, as on the M1 Pro, and is within 3 percent at level 6.
 
 The inline `load32` is kept for gcc, where servers build, at the M1 Pro's cost
 ([decisions](decisions.md#settled), 2026-10-23); the next bucket isn't.
+
+### Level 1 and the symbol coder in C
+
+2026-10-23, for Plod's HttpArena json-comp entry, which gzips each response at level 1.
+gcc 15.2.0 with `-O3 -march=native` after Goose's flags, through a wrapper passed as
+`CC`, as the entry's Dockerfile builds; each program pinned to one CPU with `taskset`.
+The bodies' times are `bench/json` with 41 batches of 500 calls, the best of 3 rounds'
+medians, in µs a call; libdeflate is v1.26, CMake `Release`, timed by the same method
+in a C program around `libdeflate_gzip_compress` with one compressor kept.
+
+Before changing anything, the base `241673c` against libdeflate, and the base with
+every index and slice check stripped from its generated C (`GS_IDX` made the index
+itself, and each `gs_abort(GS_E_SLICE, ...)` test deleted), an upper bound for what
+dropping checks gives:
+
+| Body | Base | Base, no checks | `shim/deflate.c` | libdeflate |
+|---|---:|---:|---:|---:|
+| `json25` | 11.71 (1,008 B) | 10.15 | 10.04 | 9.60 (1,012 B) |
+| `json40` | 16.51 (1,420 B) | 14.29 | 14.02 | 12.50 (1,421 B) |
+| `json50` | 19.86 (1,703 B) | 16.92 | 16.52 | 14.60 (1,708 B) |
+
+A profile of `json40` (`perf record -F 20000`) put level 1's loop at 65 percent of the
+base's time, `put_syms` and `end_block` at 22, and the Huffman sort at 4; libdeflate's
+`deflate_compress_fastest`, which clears its 128 KB table each call, took 68 percent of
+its 12.6 µs, the same 8.5 µs as the shim's loop.
+
+`bench/compare.sh base .`, the branch against `241673c`, every output byte-identical,
+3 rounds (Silesia 3 runs a round), the load average 1.0 to 1.1:
+
+| Input | Level | `241673c` | Branch |
+|---|---:|---:|---:|
+| `json25` | 1 | 11.71 | 10.28 |
+| `json40` | 1 | 16.58 | 14.20 |
+| `json50` | 1 | 19.80 | 16.85 |
+| `json40` | 6 | 30.90 | 31.33 |
+| `json40` | 9 | 45.49 | 45.76 |
+| `dickens` | 1 | 155.0 MB/s | 189.6 MB/s |
+| `mozilla` | 1 | 173.0 MB/s | 198.8 MB/s |
+| `nci` | 1 | 420.5 MB/s | 465.8 MB/s |
+| `x-ray` | 1 | 103.2 MB/s | 114.2 MB/s |
+| `xml` | 1 | 328.3 MB/s | 376.6 MB/s |
+| `samba` | 1 | 232.0 MB/s | 262.9 MB/s |
+| `ooffice` | 1 | 124.3 MB/s | 141.4 MB/s |
+
+Levels 6 and 9 stayed within 3 percent on every input, the bodies and the seven files.
+
+Two alternatives, not kept:
+
+- A `checkfree` Goose loop with the shim's interface, every index proved
+  ([findings](goose-findings.md#bounds-check-elimination-misses-an-lz-matchers-facts)),
+  with the C symbol coder: 10.89, 15.35, and 18.52 µs, against the shim's 10.05, 14.04,
+  and 16.48 in alternating rounds. It ran 270,050 instructions a call on `json40`
+  against 234,627, and 67,919 cycles against 62,743 (`perf stat`). Its first form ran
+  slower than the base: gcc kept `load8`'s eight byte loads separate, and compiled a
+  `% 30` reduction to `idiv`.
+- The next position's bucket hashed and prefetched a position ahead, as libdeflate's
+  `next_hash`: in the entry's server (below), 159.5K requests a second against 162.3K
+  without, in alternating runs.
+
+The entry's server, built natively at Plod `ef8b625` (goose-http `v0.5.7`) with the
+same gcc and flags, on CPUs 0 to 3, under wrk 4.1.0 with goose-http's
+`bench/json-comp.lua` (json-comp's seven requests in turn, `Accept-Encoding: gzip, br`)
+on CPUs 4 to 15, 8 threads, 512 connections, 20 s, with perf over 10 s of it: 152.0K
+requests a second at `v0.1.3` and 161.9K with the shim, in two alternating runs each.
+CPU a request, from `/proc/stat` over the same 10 s: 26.6 to 26.9 µs at `v0.1.3`, 25.5
+with the shim. Aegon's entry, its binary and libraries copied from its HttpArena image
+and run the same way, served 191.5K to 193.6K at 21.2 to 21.4 µs, 51.8 percent of it in
+libdeflate, for seven bodies a cycle where Plod compresses five (goose-http's
+`min_size` was 1,024 bytes). With the shim, gzip is about 45 percent of Plod's CPU;
+Plod's kernel time is 8.1 µs a request against Aegon's 6.1, and its other user code
+5.7 µs against 3.2.

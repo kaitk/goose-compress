@@ -4,8 +4,9 @@ Status: in-progress
 
 Measure and close the DEFLATE and zstd performance gaps against the C libraries on
 an AMD Ryzen 7 5800X3D under Windows (requested 2026-10-13). If the Goose encoders
-cannot reach parity, decide whether to replace them with C-library proxies. The
-package remains pure Goose until that decision is recorded.
+cannot reach parity, decide whether to replace them with C-library proxies. Decided
+2026-10-23: no proxies; the package's own encoders, with C for the loops where C
+measures faster ([decisions](../docs/decisions.md#settled)).
 
 ## Current results
 
@@ -46,7 +47,10 @@ sizes are `test/deflate/json_bodies.goose`'s golden file.
 - Add Intel ISA-L's `igzip` to `bench/` at levels 0 to 3, or record why it is excluded.
 - Compare rate against output size across levels, and measure per-stream memory and
   peak RSS for the package, libdeflate, and zlib-ng.
-- Decide whether to keep the Goose encoders or replace them with proxies.
+- Level 1 on small bodies: with `shim/deflate.c`, libdeflate is still 7 to 13 percent
+  faster on the JSON bodies, the matching about even and the rest spread over coding
+  the block (its codes, header, and symbols) and CRC-32
+  ([results](../docs/results-history.md#level-1-and-the-symbol-coder-in-c)).
 
 ## What counts as parity
 
@@ -63,11 +67,10 @@ remain to be measured.
 
 ## Proxy decision
 
-A proxy replaces an encoder whole. libdeflate has no streaming or sync flush, so a
-DEFLATE `Encoder` proxy would need zlib-ng; one-shot `compress` could use libdeflate.
-A proxy reverses the pure-Goose architecture decision and the rule on C in `AGENTS.md`,
-so any implementation starts on a separate branch after the decision and its evidence
-are recorded in [decisions](../docs/decisions.md).
+Decided 2026-10-23, against proxies: libdeflate has no streaming or sync flush, so an
+`Encoder` proxy would need zlib-ng, and `compress` and an unflushed stream would no
+longer give the same bytes. The loops where C wins move to `shim/` instead
+([decisions](../docs/decisions.md#settled)).
 
 ## Acceptance criteria
 
@@ -77,7 +80,7 @@ are recorded in [decisions](../docs/decisions.md).
 - [ ] Each change measured independently, kept or not, in `docs/results-history.md`
 - [ ] `igzip` added or its exclusion explained
 - [ ] zstd levels 1 and 3 measured on the Ryzen, with each proposed improvement measured
-- [ ] Parity reached at DEFLATE levels 1, 6, and 9 and zstd's gap closed or measured,
-      or a proxy decision recorded with its evidence
+- [x] Parity reached at DEFLATE levels 1, 6, and 9 and zstd's gap closed or measured,
+      or a proxy decision recorded with its evidence (no proxies, 2026-10-23)
 - [ ] Results include rate against ratio, per-stream memory, and peak RSS
 - [ ] Compiler and stdlib gaps found recorded in `docs/goose-findings.md`

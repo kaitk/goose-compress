@@ -2,9 +2,10 @@
 
 Compression package for [Goose](https://github.com/aardappel/goose): gzip, zlib, raw
 DEFLATE, and zstd encoders, bytes in and bytes out, with a streaming encoder that
-flushes. Pure
-Goose, with no C ([architecture](docs/architecture.md)), but for CRC-32's carryless
-multiply on x86-64 and arm64 ([decisions](docs/decisions.md)). Its first user is
+flushes. The encoders are the package's own: Goose, with C for the loops where C
+measures faster, which are CRC-32's carryless multiply, DEFLATE level 1's matcher,
+and the Huffman symbol coder, each giving the Goose code's output byte for byte
+([decisions](docs/decisions.md)). Its first user is
 [goose-http](https://github.com/kaitk/goose-http), which compresses responses with it.
 
 For DEFLATE, level 1 finds LZ77 matches in 2-entry hash buckets; levels 2 to 9
@@ -61,9 +62,9 @@ goose build hello.goose
 ```
 
 The tag `v0.1.3` has everything in the tables above. The package needs no other
-package. Its one C file, the CRC-32 shim, is built through `compress.build` by the C
-compiler `goose build` already uses, and CPUs without a carryless multiply take the
-Goose tables ([decisions](docs/decisions.md)).
+package. Its C, in `shim/`, is built through `compress.build` by the C compiler
+`goose build` already uses, and CPUs without a carryless multiply take CRC-32's Goose
+tables ([decisions](docs/decisions.md)).
 
 ## API
 
@@ -200,6 +201,9 @@ zstd.goose           the zstd frame, level 1 and 3 matching, and compressed bloc
 zstd_literals.goose  a zstd block's literals: Huffman coded, RLE, or raw
 zstd_fse.goose       zstd's FSE tables, normalized counts, and table descriptions
 checksum.goose       CRC-32, Adler-32, and XXH64
+compress.build       the C that goose build compiles: shim/
+shim/                crc32.c, CRC-32 on the carryless multiply; deflate.c, level 1's
+                     matcher and the symbol coder
 test/                unit tests, and encode.goose, which scripts/roundtrip.py drives
 scripts/             test scripts
 bench/               the C harness for libdeflate, zlib-ng, and libzstd, the Go one for

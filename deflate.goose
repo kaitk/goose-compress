@@ -156,78 +156,30 @@ fn lz_match(z: Lz&, out: u8[>..]&, flushing: bool) {
 
 // Level 1, after libdeflate's `ht_matchfinder`: head holds 2^15 buckets of the
 // 2 latest offsets, newest first. The newer candidate is extended whole; the
-// older is tried too unless that gave FAST_NICE, and the longer match is taken.
+// older is tried too unless that gave 32 bytes, and the longer match is taken.
+// The loop is shim/deflate.c's gc_match_fast, which returns here to end a
+// full block (docs/decisions.md, "Level 1's matcher and the symbol coder in C").
 fn match_fast(z: Lz&, out: u8[>..]&, end: i64) {
-    // The position, fill, and base in locals, which the loop keeps in
-    // registers; z.pos is stored before anything that may end the block.
-    let fill = z.fill;
-    let base = z.base;
-    var p = z.pos;
-    while p < end {
-        var len = 0;
-        var dist = 0;
-        if p + 4 <= fill {
-            let v = load32(z.win, p);
-            let b = bucket(v);
-            let here = base + p as! u32;
-            let c0 = z.head[b];
-            let c1 = z.head[b + 1];
-            z.head[b] = here;
-            z.head[b + 1] = c0;
-            let most = min(MAX_MATCH, fill - p);
-            let reach = min(WSIZE, p) as! u64;
-            let d0: i64 = here - c0;
-            // The older candidate is out of reach whenever the newer one is.
-            if (d0 - 1) as! u64 < reach {
-                // The 4 bytes hashed, compared at once, turn away most candidates.
-                if load32(z.win, p - d0) == v {
-                    len = 4 + match_len(z.win, p - d0 + 4, p + 4, most - 4);
-                    dist = d0;
-                }
-                let d1: i64 = here - c1;
-                if len < FAST_NICE && (d1 - 1) as! u64 < reach && load32(z.win, p - d1) == v &&
-                   (len == 0 || load32(z.win, p - d1 + len - 3) == load32(z.win, p + len - 3)) {
-                    let len1 = 4 + match_len(z.win, p - d1 + 4, p + 4, most - 4);
-                    if len1 > len {
-                        len = len1;
-                        dist = d1;
-                    }
-                }
-            }
-        }
-        if len >= MIN_MATCH {
-            for i in p + 1..min(p + len, fill - 3) {
-                let bi = bucket(load32(z.win, i));
-                z.head[bi + 1] = z.head[bi];
-                z.head[bi] = base + i as! u32;
-            }
-            z.pos = p;
-            add_match(z, out, dist, len);
-            p += len;
-        } else {
-            // add_lit, with the position in its local.
-            let c = z.win[p];
-            z.syms[z.nsym] = c;
-            z.lfreq[c]++;
-            z.nsym++;
-            p++;
-            if z.nsym == SYM_MAX {
-                z.pos = p;
-                end_block(z, out, false);
-            }
+    var f = Fast { fill: z.fill, end: end, pos: z.pos, nsym: z.nsym, extra: z.extra, base: z.base };
+    while f.pos < end {
+        match_fast_c(z.win, z.head, z.syms, z.lfreq, z.dfreq, f);
+        z.pos = f.pos;
+        z.nsym = f.nsym;
+        z.extra = f.extra;
+        if z.nsym == SYM_MAX {
+            end_block(z, out, false);
+            f.nsym = 0;
+            f.extra = 0;
         }
     }
-    z.pos = p;
 }
 
-// Level 1's match length that leaves a bucket's older candidate untried, as
-// libdeflate's.
-let FAST_NICE = 32;
+// gc_match_fast's state: the window's fill, where to stop, the position, and
+// the block's symbol count and extra bits, as in Lz.
+struct Fast { fill: i64, end: i64, pos: i64, nsym: i64, extra: i64, base: u32 }
 
-// The first of the 2 entries of a level 1 bucket in head.
-fn bucket(v: u32) -> i64 {
-    return ((v * 0x9E3779B1) >> (32 - HASH_BITS + 1)) * 2;
-}
+extern "gc_match_fast" fn match_fast_c(win: const u8[:], head: u32[:], syms: u32[:], lfreq: u32[:],
+                                       dfreq: u32[:], f: Fast&);
 
 // Levels 2 to 9: searches along the hash chains, and at a lazy level takes a
 // literal where the match one or two positions on is better. Every position
@@ -530,57 +482,30 @@ fn code_bits(freq: const u32[:], h: Huff&) -> i64 {
     return n;
 }
 
-// Codes the symbols and the end of the block. A symbol takes at most 48 bits,
-// so with the fewer than 8 bits left over from the one before, it fits a u64:
-// each is stored as 8 bytes into a buffer, and the whole bytes kept. The
-// buffer is appended to out as it fills, since shrinking out would bar
-// callers from holding slices of it.
+// Codes the symbols and the end of the block with shim/deflate.c's
+// gc_put_syms, a buffer of STAGE bytes at a time. The buffer is appended to
+// out as it fills, since shrinking out would bar callers from holding slices
+// of it.
 fn put_syms(z: Lz&, out: u8[>..]&, syms: const u32[:], lit: Huff&, dist: Huff&) {
     var buf: u8[STAGE + 8] = [0; STAGE + 8];
-    var o = 0;
-    var bits = z.bits;
-    var nbits = z.nbits;
-    while nbits >= 8 {
-        buf[o] = bits as! u8;
-        o++;
-        bits >>= 8;
-        nbits -= 8;
+    var w = BitState { bits: z.bits, nbits: z.nbits, next: 0, out: 0 };
+    var done = false;
+    while !done {
+        done = put_syms_c(buf, syms, lit, dist, w);
+        out.append(buf[..w.out]);
     }
-    for s in syms {
-        if s < 256 {
-            bits |= (lit.code[s] as u64) << nbits;
-            nbits += lit.len[s];
-        } else {
-            let lc, lbits, lextra = len_code(s & 0xff);
-            bits |= (lit.code[lc] as u64) << nbits;
-            nbits += lit.len[lc];
-            bits |= (lextra as u64) << nbits;
-            nbits += lbits;
-            let dc, dbits, dextra = dist_code(s >> 8);
-            bits |= (dist.code[dc] as u64) << nbits;
-            nbits += dist.len[dc];
-            bits |= (dextra as u64) << nbits;
-            nbits += dbits;
-        }
-        put_le64(buf[o..o + 8], bits);
-        o += nbits >> 3;
-        bits >>= nbits & ~7;
-        nbits &= 7;
-        if o >= STAGE {
-            out.append(buf[..o]);
-            o = 0;
-        }
-    }
-    bits |= (lit.code[END_BLOCK] as u64) << nbits;
-    nbits += lit.len[END_BLOCK];
-    put_le64(buf[o..o + 8], bits);
-    o += nbits >> 3;
-    out.append(buf[..o]);
-    z.bits = bits >> (nbits & ~7);
-    z.nbits = nbits & 7;
+    z.bits = w.bits;
+    z.nbits = w.nbits;
 }
 
-// put_syms's buffer: it appends once it holds this many bytes.
+// gc_put_syms's state: the bits held, as in Lz, the next symbol to code, and
+// the bytes the last call wrote.
+struct BitState { bits: u64, nbits: i64, next: i64, out: i64 }
+
+extern "gc_put_syms" fn put_syms_c(buf: u8[:], syms: const u32[:], lit: const Huff&, dist: const Huff&,
+                                   w: BitState&) -> bool;
+
+// The bit writers' buffers append once they hold this many bytes.
 let STAGE = 4096;
 
 fn put_le64(b: u8[:], v: u64) {

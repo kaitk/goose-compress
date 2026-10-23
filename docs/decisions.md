@@ -11,17 +11,25 @@ users, is [architecture](architecture.md). Measurements are recorded in
   HTTP, so any Goose program can use it. goose-http, its first user, reaches it only from
   a module of its own (its task 022). The name leaves room for zstd, where
   `goose-deflate` wouldn't have (2026-10-12).
-- **Pure Goose, not bindings.** The encoders are Goose, not wrappers over zlib-ng or
-  libdeflate. Compression is hashing, bit-packing, and Huffman tables, the byte work
-  that measuring Goose is about; libdeflate, zlib-ng, libzstd, and klauspost/compress
-  are what it's benchmarked against, in `bench/` (2026-10-12). Whether a C-backed
-  encoder is kept beside the Goose one, for comparison inside a program, is open.
+- **Goose where it's as fast, C where it wins; the package's own encoders, not
+  proxies.** A hot loop moves to C, in `shim/` and built through `compress.build`, when
+  the C measures faster than the best Goose for it, and the C keeps the Goose code's
+  output byte for byte. The rest stays Goose. This replaces "pure Goose, not bindings"
+  (2026-10-12): pure Goose isn't a requirement, and a server that gzips each response
+  pays for every microsecond (2026-10-23). It settles task 005's keep-or-proxy question
+  against proxies. libdeflate gzips the HttpArena bodies 7 to 13 percent faster than
+  the package with its C matcher, but it has no streaming or sync flush, so a proxy
+  would leave `Encoder` on another encoder whose bytes differ from `compress`'s, and
+  would bring libdeflate's C to every platform the package builds on. In Plod's
+  json-comp entry, gzip is now about 45 percent of the server's CPU, and most of the
+  gap to Aegon is outside it ([results](results-history.md#level-1-and-the-symbol-coder-in-c)).
+  A proxy comes back if gzip again decides that benchmark.
 - **`bench/` holds each comparison library's own language: C, and Go for
   klauspost/compress.** klauspost is task 004's model of a zstd encoder written outside
   C, without assembly, so it shows what a language like Goose can reach; a C port or
   bindings would measure something else. `bench/klauspost/` is a Go module that pins
-  its version in `go.mod`, and `bench/build.sh` builds it with `go build`. The package
-  itself stays Goose with no C (task 004 step 6, 2026-10-13).
+  its version in `go.mod`, and `bench/build.sh` builds it with `go build`. The package's
+  own C is its shims, under the decision above (task 004 step 6, 2026-10-13).
 - **CRC-32 on the CPU's carryless multiply, in C for now.** On x86-64 with PCLMULQDQ
   and SSE4.1, and on arm64 with PMULL, `crc32` folds 64 bytes and up with
   `shim/crc32.c`, which `compress.build` compiles, and the slice-by-16 tables take the
@@ -39,7 +47,23 @@ users, is [architecture](architecture.md). Measurements are recorded in
   `dickens`
   ([results](results-history.md#crc-32-on-pmull)). The trade-off: a C compiler for one
   function (2026-10-23).
-- **`load32` is an `inline fn`, tuned for gcc.** Servers build with gcc, which doesn't
+- **Level 1's matcher and the symbol coder in C.** `shim/deflate.c`'s `gc_match_fast`
+  is level 1's loop, and `gc_put_syms` codes every level's dynamic and fixed blocks,
+  each the Goose code's algorithm step for step, so the output is the same byte for
+  byte. Goose keeps the stream, where blocks end, and the Huffman codes. The shim is
+  plain C, which runs on every CPU, so nothing falls back. With gcc 15.2
+  `-O3 -march=native` on a Ryzen 7 5800X3D under WSL2, level 1 takes 12 to 15 percent
+  off the JSON bodies and runs 9 to 22 percent faster on Silesia; levels 6 and 9 are
+  unchanged within noise. The gain is the bounds checks: the Goose code with every
+  check stripped from its C ran as fast as the shim. A `checkfree` Goose loop came
+  within 9 percent, 15.35 µs a call on `json40` against the shim's 14.04, because the
+  facts the analysis can't keep had to be written as range tests of their own
+  ([findings](goose-findings.md#bounds-check-elimination-misses-an-lz-matchers-facts)).
+  Prefetching the next bucket, as libdeflate does, cost 2 percent in a server. The
+  trade-off: level 1 and the symbol coder are no longer Goose to measure
+  ([results](results-history.md#level-1-and-the-symbol-coder-in-c), 2026-10-23).
+- **`load32` is an `inline fn`, tuned for gcc.** Level 1 no longer reads through it
+  (above); the chains do. Servers build with gcc, which doesn't
   inline the C `load32` on its own. With gcc on a Ryzen 7 5800X3D, the inline form
   takes 21 to 29 percent off the small JSON bodies at levels 1 and 6 and gives 12 to 20
   percent more MB/s on Silesia

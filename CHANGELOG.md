@@ -3,6 +3,21 @@
 What each tag adds. Earlier tags are described by their commits and
 [results history](docs/results-history.md).
 
+## v0.1.4 (2026-10-23)
+
+- DEFLATE level 1's matcher and the symbol coder every level writes blocks with are C,
+  `shim/deflate.c`, built through `compress.build`, with the Goose code's algorithm step
+  for step. With gcc 15.2 `-O3 -march=native` on a Ryzen 7 5800X3D under WSL2, level 1
+  takes 12 to 15 percent off the 4 to 8 KB JSON bodies and runs 9 to 22 percent faster
+  on Silesia; levels 6 and 9 are unchanged within noise
+  ([results](docs/results-history.md#level-1-and-the-symbol-coder-in-c)).
+- The package's encoders stay its own, with C where C measures faster, and no proxy to
+  libdeflate or zlib-ng ([decisions](docs/decisions.md#settled)).
+- `test/run_tests.py` compiles the shims `compress.build` lists, into a directory of
+  their own: under MSVC, `checksums/crc32`'s object had replaced `shim/crc32.c`'s.
+
+The output is v0.1.3's, byte for byte, on every input and level measured.
+
 ## v0.1.3 (2026-10-23)
 
 - CRC-32 folds 64 bytes and up with the CPU's carryless multiply, PCLMULQDQ on x86-64

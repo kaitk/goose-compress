@@ -141,3 +141,57 @@ arm64 with PMULL, `shim/crc32.c` folds the CRC in C, built through `compress.bui
 with the tables kept for other CPUs and `GOOSE_COMPRESS_PORTABLE=1`
 ([decisions](decisions.md), [results](results-history.md#crc-32-on-pmull),
 2026-10-23). The shim stays until Goose has a carryless multiply.
+
+### Bounds-check elimination misses an LZ matcher's facts
+
+Found on `8511ae3` (`v2026.3`), task 005. Status: open
+
+Level 1's loop compiles as a `checkfree fn` only once each fact the analysis needs is
+written as a test of its own, and those tests cost about what the checks did. Two of
+the gaps, as `goose check` reports them:
+
+- `p >= 0` doesn't survive the back edge of a loop that advances `p` by a step it
+  computes, though `p` starts at an asserted non-negative value and only grows.
+- A loop condition `n + 8 <= x.len` doesn't prove `x[n..n + 8]` in an inlined callee,
+  for a `var n` the loop advances. In level 1's loop, a guard `n < x.len - 7` did.
+
+```goose
+checkfree fn walk(w: const u8[:], start: i64, end: i64) -> i64 {
+    assert(start >= 0 && end <= w.len);
+    var p = start;
+    var s = 0;
+    while p < end {
+        let c = w[p];       // error: nothing shows p >= 0
+        s += c;
+        p += if c > 100 { 3 } else { 1 };
+    }
+    return s;
+}
+
+checkfree inline fn load8(s: const u8[:], i: i64) -> u64 {
+    let c = s[i..i + 8];    // error: nothing shows the upper bound <= s.len
+    return c[0] | (c[7] as u64) << 56;
+}
+
+checkfree fn scan(x: const u8[:], from: i64) -> u64 {
+    guard from >= 0 else { return 0; }
+    var n = from;
+    var acc: u64 = 0;
+    while n + 8 <= x.len {
+        acc ^= load8(x, n);
+        n += 8;
+    }
+    return acc;
+}
+```
+
+The rest of the loop needed its candidate tests split into ranges the analysis takes:
+four compares where the C has one unsigned compare. What it costs here: the `checkfree` loop ran 270,050 instructions a call on `json40`
+against the C shim's 234,627, and 15.35 µs against 14.04 (gcc 15.2
+`-O3 -march=native`, a Ryzen 7 5800X3D under WSL2, `bench/json` with 41 batches of
+500 calls, best of 3 rounds). The same Goose with every check stripped from its C ran
+as fast as the shim. Expected: the analysis keeps a loop variable's bounds across its
+back edge, or `checkfree` code can state a loop invariant once.
+
+Workaround: level 1's loop is C, `shim/deflate.c`
+([decisions](decisions.md), 2026-10-23).

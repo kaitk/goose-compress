@@ -54,7 +54,8 @@ The encoder follows libdeflate's design:
 - **Matching.** Level 0 stores. Level 1 looks up 2-entry hash buckets and takes the
   longer match greedily. Levels 2 to 9 walk hash chains, comparing more candidates the
   higher the level; levels 5 to 9 match lazily, trying one position on, and 8 and 9 two
-  positions on, before they take a match. The default is 6.
+  positions on, before they take a match. The default is 6. Level 1's loop is C,
+  `shim/deflate.c`, which gives the same matches the Goose did.
 - **The window** holds 32 KB of history and 32 KB of input, and slides when it fills.
   The hash table holds stream offsets rather than window positions, so a slide rewrites
   nothing, and every candidate is compared, so a stale entry costs a probe, never a
@@ -62,8 +63,10 @@ The encoder follows libdeflate's design:
 - **Blocks.** A block is held as symbols until 16,384 of them, a slide, a flush, or the
   end, then coded whole in the shortest of three forms, counted exactly: a Huffman code
   built from its symbol counts, the fixed code, or stored. Incompressible input grows
-  by about 5 bytes every 16 KB.
-- **Checksums.** CRC-32 for gzip, by slice-by-16, and Adler-32 for zlib, both also
+  by about 5 bytes every 16 KB. Goose builds the codes; `shim/deflate.c` writes the
+  symbols with them.
+- **Checksums.** CRC-32 for gzip, by the CPU's carryless multiply where it has one
+  (`shim/crc32.c`) and slice-by-16 elsewhere, and Adler-32 for zlib, both also
   available on their own (`compress::crc32`, `compress::adler32`).
 
 ## zstd

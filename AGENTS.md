@@ -69,16 +69,19 @@ Several agents work in these repositories at once (2026-10-20).
   `docs/goose-findings.md` as `agents/goose.md` says, and report blockers to the
   maintainer.
 
-## Goose, with one C shim
+## Goose, and C where it wins
 
-- The package is Goose with no C: hashing, bit-packing, and Huffman tables are the work
-  that measuring Goose is about. Other languages belong in `bench/` only, as the
-  languages of the libraries the package is measured against: C for libdeflate, zlib-ng,
-  and libzstd, and Go for klauspost/compress.
-- The one exception is CRC-32's carryless multiply, `shim/crc32.c`, built through
-  `compress.build`, until Goose has the intrinsic
-  ([decisions](docs/decisions.md), [findings](docs/goose-findings.md#goose-has-no-carryless-multiply)).
-  The Goose tables stay as its fallback. Any other C needs a decision of its own.
+- The package is Goose, with C for a hot loop only where the C measures faster than
+  the best Goose for it ([decisions](docs/decisions.md), 2026-10-23). The C is in
+  `shim/`, built through `compress.build`, and gives the Goose code's output byte for
+  byte; `bench/compare.sh` checks that. Today that's CRC-32's carryless multiply,
+  `shim/crc32.c`, with the Goose tables as its fallback, and level 1's matcher and the
+  symbol coder, `shim/deflate.c`.
+- The encoders stay the package's own: no proxy to libdeflate, zlib-ng, or libzstd.
+  Those libraries, and klauspost/compress in Go, belong in `bench/`, as what the package
+  is measured against.
+- Before moving a loop to C, try it as a `checkfree` Goose function and measure both;
+  record a bounds check the analysis can't drop in `docs/goose-findings.md`.
 
 ## Code conventions
 
