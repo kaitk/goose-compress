@@ -226,6 +226,8 @@ gzip -dc out.gz
   `SpeedFastest` and 3 `SpeedDefault`. `go build` fetches the module into Go's module
   cache. `GO` names the Go toolchain, or `go` on `PATH` without it.
 - `bench`, from `bench/bench.goose`, which compresses a file with the package.
+- `json`, from `bench/json.goose`, which times the package's one-shot gzip of a small
+  body, as a server compresses each response.
 - The [Silesia corpus](https://sun.aei.polsl.pl/~sdeor/index.php?page=silesia), 211 MB
   in 12 files, from `silesia.zip`, checked against its SHA-256 before it's unzipped.
 
@@ -233,7 +235,10 @@ gzip -dc out.gz
 ratio and its median and best rate over `RUNS` runs. Each run compresses the whole file
 in memory to one stream; reading the file isn't timed. `FORMAT=zstd` runs the package
 against libzstd, `libzstd-w17`, and klauspost at levels 1 and 3, in place of gzip
-against zlib-ng and libdeflate.
+against zlib-ng and libdeflate. For gzip, a second table gives the package's µs a call
+on the small JSON bodies in `bench/json/` at levels 1 and 6; `BODIES=` skips it. The
+bodies' sizes are a test (`test/deflate/json_bodies.goose`), so a change that grows
+them fails `scripts/test.sh`; their time is this table's and `bench/compare.sh`'s.
 
 ```sh
 bench/build.sh

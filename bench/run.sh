@@ -10,6 +10,11 @@
 # SpeedFastest and SpeedDefault. LEVELS (default "0", or "1 3" for zstd): the
 # levels, the same number for each library. RUNS (default 10). FILES (default:
 # the Silesia files below) names files under build/bench/corpus/, or paths.
+#
+# For gzip, a second table then gives the package's time a call on the small
+# JSON bodies in bench/json/, at levels 1 and 6, from bench/json.goose: the
+# median and best of 41 batches of 500 calls. BODIES (default: all four) names
+# them; empty skips the table.
 set -eu
 # awk prints decimal commas under some locales.
 export LC_ALL=C
@@ -43,3 +48,17 @@ for f in $files; do
         done
     done
 done
+
+bodies=${BODIES-"small100 json25 json40 json50"}
+if [ "$format" = gzip ] && [ -n "$bodies" ]; then
+    echo
+    echo "| Body | Bytes | Level | Bytes out | µs a call, median | µs a call, best |"
+    echo "|---|---:|---:|---:|---:|---:|"
+    for b in $bodies; do
+        for level in 1 6; do
+            "$out/json" "$level" "$root/bench/json/$b.json" 41 500 | awk -v b="$b" '{
+                printf "| %s | %d | %s | %d | %.2f | %.2f |\n", b, $3, $2, $4, $5 / 1000, $6 / 1000
+            }'
+        done
+    done
+fi

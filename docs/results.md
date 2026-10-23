@@ -125,6 +125,24 @@ percent smaller than libzstd's with the same 128 KB window: the window is the wh
 level 3's gap. Where the time goes is in
 [results-history.md](results-history.md#zstd-against-libzstd-and-klauspost-task-004-step-6).
 
+### Small JSON bodies at `v0.1.2`
+
+2026-10-23, package at `v0.1.2`, Goose `v2026.3`, same compiler. `bench/run.sh`'s
+second table: gzip, one-shot, each body compressed 500 times a batch in 41 batches
+after one call that sets the encoder up, the median and best batch in µs a call. The
+bodies are in `bench/json/`. Other work kept the load average at 14 throughout.
+
+| Body | Bytes | Level | Bytes out | µs a call, median | µs a call, best |
+|---|---:|---:|---:|---:|---:|
+| small100 | 100 | 1 | 108 | 2.25 | 2.25 |
+| small100 | 100 | 6 | 108 | 2.42 | 2.41 |
+| json25 | 4190 | 1 | 1008 | 11.32 | 11.28 |
+| json25 | 4190 | 6 | 938 | 17.61 | 17.50 |
+| json40 | 6707 | 1 | 1420 | 15.95 | 15.88 |
+| json40 | 6707 | 6 | 1273 | 27.39 | 26.09 |
+| json50 | 8397 | 1 | 1703 | 19.02 | 18.93 |
+| json50 | 8397 | 6 | 1483 | 34.74 | 32.26 |
+
 ## AMD Ryzen 7 5800X3D, Windows
 
 - AMD Ryzen 7 5800X3D (Zen 3, 8 cores, 16 threads,

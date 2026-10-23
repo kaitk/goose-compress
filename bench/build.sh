@@ -3,8 +3,8 @@
 # libzstd at their pins, in release mode with their default options, which
 # choose each CPU's fastest code at run time; bench/ref.c against all three;
 # bench/klauspost with go build, which fetches klauspost/compress at the
-# version its go.mod pins; bench/bench.goose with goose build; and the Silesia
-# corpus, checked against its SHA-256.
+# version its go.mod pins; bench/bench.goose and bench/json.goose with goose
+# build; and the Silesia corpus, checked against its SHA-256.
 #
 # GOOSE or GOOSE_COMMIT names the compiler (default: the pinned release,
 # scripts/goose.sh), CC the C compiler (default: cc, or clang on Windows), GO
@@ -80,6 +80,7 @@ lib() {
 "$go" build -C "$root/bench/klauspost" -o "$out/klauspost$exe" .
 
 "$goose" build -o "$out/bench$exe" "$root/bench/bench.goose"
+"$goose" build -o "$out/json$exe" "$root/bench/json.goose"
 
 if [ ! -f "$out/corpus/dickens" ]; then
     curl -sSLf -o "$out/silesia.zip" https://sun.aei.polsl.pl/~sdeor/corpus/silesia.zip
